@@ -111,8 +111,16 @@ function runFeatureChecks() {
   g = newGame('top', 'real', 'transfer');g.deal=false;openMarket('summer');
   const showTargets=g.market.filter(m=>m.type==='star');
   assertFeature(g.playStyle==='transfer'&&showTargets.length>=6&&showTargets.every(m=>recognizablePlayer(m)&&!m.generated), 'transfer-only market prioritizes recognizable real players');
-  const showTarget=showTargets[0],showIndex=g.market.indexOf(showTarget);g.money=Math.max(g.money,showTarget.price+1);
-  assertFeature(buyPlayer(showIndex)&&SQ().some(p=>p.name===showTarget.name)&&!g.cs[showTarget.from].sq.some(p=>p.name===showTarget.name), 'featured star transfer moves the real player');
+  assertFeature(coachNeeds(g.coachReport).every(n=>n.targets.every(recognizablePlayer)), 'transfer-only coach targets are recognizable players only');
+  assertFeature(tmMarketValue('Alexandre Lacazette',2016)===4000&&marketValueInfo({name:'Alexandre Lacazette',abi:87,age:26,pot:90},2016).source==='德转参考', 'Transfermarkt reference value');
+  const preservedReport=g.coachReport;g.petitioned=true;g.money=20000;const refreshed=refreshMarketByBudget();
+  assertFeature(refreshed>0&&g.coachReport===preservedReport&&g.petitioned&&g.market.every(m=>(m.price||m.fee||0)<=g.money), 'budget refresh preserves decisions and returns affordable targets');
+  assertFeature(coachNeeds(g.coachReport).filter(n=>!n.fulfilled).every(n=>n.targets.every(t=>t.price<=g.money)), 'budget refresh also updates coach targets within budget');
+  assertFeature(g.market.every(m=>recognizablePlayer(m))&&transferHtml().includes('market-refresh')&&marketListHtml().includes('要价'), 'transfer-only budget refresh stays famous and shows value versus asking price');
+  const refreshedTarget=g.market[0],refreshedIndex=0;g.money=Math.max(g.money,refreshedTarget.price+1);
+  assertFeature(buyPlayer(refreshedIndex)&&SQ().some(p=>p.name===refreshedTarget.name)&&(!refreshedTarget.from||!g.cs[refreshedTarget.from].sq.some(p=>p.name===refreshedTarget.name)), 'featured star transfer moves the real player');
+  const remainingBudget=g.money,secondRefresh=refreshMarketByBudget();
+  assertFeature(secondRefresh===g.market.length&&g.market.every(m=>(m.price||m.fee||0)<=remainingBudget), 'post-signing refresh uses remaining budget');
   const ordinaryOld={name:'Generated Veteran',generated:true,age:29,abi:90,pot:90};developPlayer(ordinaryOld,30);
   assertFeature(ordinaryOld.age===30&&ordinaryOld.abi<=89, 'transfer-only ordinary decline starts at 30');
   const famousOld={name:'Lionel Messi',lg:true,age:32,abi:95,pot:98};developPlayer(famousOld,30);
@@ -164,6 +172,7 @@ function runFeatureChecks() {
 
   const savedMoney = g.money;
   g.money = 0; g.phase = 'window'; g.marketType = 'winter'; g.mq = '';
+  while(SQ().length>=26)SQ().pop();
   for(const item of g.market)item.price=Math.max(1,item.price||1);
   assertFeature(marketListHtml().includes('data-src="market"'), 'listed-market petition entry');
   if (!secondNeed.targets.length) secondNeed.targets.push({name:'Coach Petition Test',pos:secondNeed.pos,age:21,abi:72,pot:90,price:100});
