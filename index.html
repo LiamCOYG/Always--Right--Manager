@@ -1078,9 +1078,11 @@ function profileOf(p){
   const data={role:r,pace:val(b[0],0),shot:val(b[1],1),pass:val(b[2],2),def:val(b[3],3),stamina:val(b[4],4)};PROFILE_CACHE.set(p,{abi:p.abi,data:data});return data;
 }
 function profileText(p){const a=profileOf(p);return a.role==='GK'?'扑救'+a.save+' · 反应'+a.reflex+' · 手控'+a.handle+' · 制空'+a.air+' · 出球'+a.kick:'速度'+a.pace+' · 射门'+a.shot+' · 传球'+a.pass+' · 防守'+a.def+' · 体能'+a.stamina}
-const CUPF=[0.20,0.38,0.55,1.0];
+const CUPF=[0.56,0.72,0.86,1.0];
+const LEGACY_CUPF=[0.20,0.38,0.55,1.0];
+const UCL_GROUP_ROUNDS=[3,6,9,12,15,18];
 function ROUNDS(){return g.sched.length}
-function CUPR(){const R=ROUNDS();return CUPF.map(f=>Math.max(4,Math.round(R*f)))}
+function CUPR(){const R=ROUNDS(),fs=g&&g.ucl&&g.ucl.format==='legacy'?LEGACY_CUPF:CUPF;return fs.map(f=>Math.max(4,Math.round(R*f)))}
 function WINTER(){return Math.floor(ROUNDS()/2)}
 function SACKR(){const R=ROUNDS();return[Math.round(R*0.3),Math.round(R*0.6),Math.round(R*0.85)]}
 let g=null;
@@ -1385,7 +1387,8 @@ function playRound(){
     pushFeed({type:'text',cls:'season',tag:'氛围极佳',title:'球队化学反应拉满',body:'球员自发加练，互相鼓励。（全队状态+）'});
     for(const p2 of SQ())p2.form=clamp(p2.form+0.01,0.8,1.16);
   }
-  if(CUPR().indexOf(g.round)>=0&&g.ucl&&g.ucl.stage<4){cupStage();if(g.phase==='cupmatch')return}
+  if(UCL_GROUP_ROUNDS.indexOf(g.round)>=0&&g.ucl&&g.ucl.phase==='group'){uclGroupRound();if(g.phase==='cupmatch')return}
+  if(CUPR().indexOf(g.round)>=0&&g.ucl&&g.ucl.phase!=='group'&&g.ucl.stage<4){cupStage();if(g.phase==='cupmatch')return}
   if(g.round>=ROUNDS()){endSeason();return}
   if(g.round===WINTER())winterOpen();
   else g.phase='idle';
@@ -1393,17 +1396,51 @@ function playRound(){
 /* ---- 欧冠 ---- */
 function cupStageName(st){return['欧冠1/8决赛','欧冠1/4决赛','欧冠半决赛','欧冠决赛'][st]||'欧冠'}
 function startUCL(){
-  let teams;
-  if(g.uclSeed&&g.uclSeed.length===16)teams=g.uclSeed.filter(id=>g.cs[id]);
-  else teams=[];
+  let teams=g.uclSeed?g.uclSeed.filter(id=>g.cs[id]):[];
   const ranked=Object.keys(g.cs).sort((a,b)=>clubOvr(b)-clubOvr(a));
-  for(const id of ranked){if(teams.indexOf(id)<0)teams.push(id);if(teams.length>=16)break}
-  teams=shuffle(teams);
-  const ties=[];for(let i=0;i<8;i++)ties.push([teams[i*2],teams[i*2+1]]);
-  g.ucl={stage:0,ties:ties,userIn:ties.some(t=>t.indexOf(g.clubId)>=0),winner:null,winners:[],pendingTie:null};
-  if(g.ucl.userIn){const t=ties.find(x=>x.indexOf(g.clubId)>=0);const opp=t[0]===g.clubId?t[1]:t[0];
-    pushFeed({type:'text',cls:'season',tag:'欧冠',title:'欧冠16强出炉',body:'你的球队出战本赛季欧冠！1/8决赛对手：'+C[opp].name+'（'+LG[C[opp].lg]+'，联赛第5轮后开战）。'});}
-  else pushFeed({type:'text',cls:'season',tag:'欧冠',title:'本赛季无缘欧冠',body:'各联赛前二晋级欧冠，专注联赛吧。'});
+  for(const id of ranked){if(teams.indexOf(id)<0)teams.push(id);if(teams.length>=32)break}
+  teams=teams.slice(0,32).sort((a,b)=>clubOvr(b)-clubOvr(a));
+  const pots=[];for(let i=0;i<4;i++)pots.push(shuffle(teams.slice(i*8,i*8+8)));
+  const groups=Array.from({length:8},(_,i)=>[pots[0][i],pots[1][i],pots[2][i],pots[3][i]]);
+  const groupTables=groups.map(ids=>newTable(ids));
+  const userGroup=groups.findIndex(ids=>ids.indexOf(g.clubId)>=0),userIn=userGroup>=0;
+  g.ucl={format:'groups',phase:'group',stage:-1,groupRound:0,groups:groups,groupTables:groupTables,userGroup:userGroup,userIn:userIn,winner:null,winners:[],pendingTie:null,pendingKind:null};
+  if(userIn){const names=groups[userGroup].map(id=>C[id].name).join('、');
+    pushFeed({type:'text',cls:'season',tag:'欧冠',title:'欧冠小组赛抽签完成',body:String.fromCharCode(65+userGroup)+'组：'+names+'。六轮小组赛后，前两名晋级16强；首战安排在联赛第'+UCL_GROUP_ROUNDS[0]+'轮后。'});}
+  else pushFeed({type:'text',cls:'season',tag:'欧冠',title:'本赛季无缘欧冠',body:'32支球队进入小组赛，各组前两名晋级16强。专注联赛，争取下赛季资格。'});
+}
+function migrateUCL(){
+  if(!g||!g.ucl||g.ucl.format)return;
+  if(g.round===0&&(g.phase==='window'||g.phase==='idle')){
+    g.feed=(g.feed||[]).filter(c=>c.title!=='欧冠16强出炉'&&c.title!=='本赛季无缘欧冠');
+    startUCL();
+  }else{g.ucl.format='legacy';g.ucl.phase='knockout'}
+}
+const UCL_GROUP_FIXTURES=[[[0,1],[2,3]],[[2,0],[1,3]],[[0,3],[1,2]],[[1,0],[3,2]],[[0,2],[3,1]],[[3,0],[2,1]]];
+function uclGroupSummary(u){
+  if(u.userGroup<0)return '';
+  return sortTableOf(u.groupTables[u.userGroup]).map((r,i)=>(i+1)+'.'+C[r[0]].name+' '+r[1].pts+'分').join(' · ');
+}
+function finishUCLGroups(){
+  const u=g.ucl,qualified=[];
+  for(const table of u.groupTables)for(const row of sortTableOf(table).slice(0,2))qualified.push(row[0]);
+  const ws=shuffle(qualified),ties=[];for(let i=0;i<16;i+=2)ties.push([ws[i],ws[i+1]]);
+  u.phase='knockout';u.stage=0;u.ties=ties;u.userIn=qualified.indexOf(g.clubId)>=0;u.pendingTie=null;u.pendingKind=null;
+  if(u.userGroup>=0){
+    const rank=sortTableOf(u.groupTables[u.userGroup]).findIndex(r=>r[0]===g.clubId)+1;
+    if(u.userIn){const t=ties.find(x=>x.indexOf(g.clubId)>=0),opp=t[0]===g.clubId?t[1]:t[0];pushFeed({type:'text',cls:'season',tag:'欧冠',title:'小组第'+rank+'，晋级16强',body:'小组赛结束，你将在1/8决赛面对 '+C[opp].name+'（'+LG[C[opp].lg]+'）。'});}
+    else pushFeed({type:'text',cls:'bad',tag:'欧冠',title:'小组赛出局',body:'最终排名小组第'+rank+'，欧冠征程止步。积分榜：'+uclGroupSummary(u)});
+  }
+}
+function uclGroupRound(){
+  const u=g.ucl;if(!u||u.phase!=='group'||u.groupRound>=6)return;
+  const pattern=UCL_GROUP_FIXTURES[u.groupRound];let userTie=null;
+  for(let gi=0;gi<u.groups.length;gi++)for(const pair of pattern){
+    const tie=[u.groups[gi][pair[0]],u.groups[gi][pair[1]]];
+    if(tie.indexOf(g.clubId)>=0)userTie=tie;else simAIMatch(u.groupTables[gi],tie[0],tie[1]);
+  }
+  if(userTie){u.pendingTie=userTie;u.pendingKind='group';g.phase='cupmatch';return}
+  u.groupRound++;if(u.groupRound>=6)finishUCLGroups();
 }
 function simCupTie(a,b){
   const home=Math.random()<0.5?a:b;const away=home===a?b:a;
@@ -1445,7 +1482,7 @@ function advanceCup(winners){
 function playCupMatch(){
   if(g.phase!=='cupmatch'||!g.ucl||!g.ucl.pendingTie)return;
   const status0={board:g.board,fan:g.fan,morale:g.morale,money:g.money};
-  const u=g.ucl;const tie=u.pendingTie;const home=tie[0]===g.clubId;const opp=home?tie[1]:tie[0];
+  const u=g.ucl,isGroup=u.pendingKind==='group'||u.phase==='group';const tie=u.pendingTie;const home=tie[0]===g.clubId;const opp=home?tie[1]:tie[0];
   const oppTactic=opponentPlan(opp);
   const op=teamStrength(opp,oppTactic.fc,oppTactic.ment,!home,null,oppTactic.press,oppTactic.style);
   const me=teamStrength(g.clubId,g.tactic.fc,g.tactic.ment,home,op.ovr,g.tactic.press||'mid',g.tactic.style||'bal');
@@ -1454,24 +1491,29 @@ function playCupMatch(){
   const lo=clamp(1.30*Math.pow(op.atk/me.def,2.6),0.15,4.3);
   const gm=home?pois(lm):pois(lo),go=home?pois(lo):pois(lm);
   let winner,pens=null;
-  if(gm===go){const uw=Math.random()<0.5+(me.ovr-op.ovr)/150;
+  if(isGroup)winner=gm===go?null:(home?gm>go:go>gm)?g.clubId:opp;
+  else if(gm===go){const uw=Math.random()<0.5+(me.ovr-op.ovr)/150;
     const w=ri(3,5),l=Math.max(1,w-ri(1,2));
     pens=home?(uw?[w,l]:[l,w]):(uw?[l,w]:[w,l]);
     winner=uw?g.clubId:opp;}
   else winner=(home?gm:go)>(home?go:gm)?g.clubId:opp;
-  const scorers=[];const myG=home?gm:go;
+  const scorers=[];const myG=home?gm:go,opG=home?go:gm;
   for(let i=0;i<myG;i++){const nm=pickScorer(me.xi);scorers.push({n:nm,min:ri(2,90)});
     const p=SQ().find(q=>q.name===nm);if(p){p.goals++;p.careerGoals=(p.careerGoals||0)+1;}}
   if(Math.random()<0.06){const p=pick(me.xi);if(p)p.ban=ri(1,2)}
   if(Math.random()<0.08){const cand=SQ().filter(p=>!p.inj);if(cand.length){const p=pick(cand);p.inj=ri(1,3)}}
-  if(winner===g.clubId){B(2);F(3);g.morale=clamp(g.morale+2,5,95);M(eraK(g.year)*(4+u.stage*2));
+  if(isGroup&&myG===opG){B(1);F(1);g.morale=clamp(g.morale+1,5,95);M(eraK(g.year));}
+  else if(winner===g.clubId){B(2);F(3);g.morale=clamp(g.morale+2,5,95);M(eraK(g.year)*(isGroup?2:4+u.stage*2));
     if(u.stage===3){g.tro.ucl++;g.ach.uclTitle=true;M(eraK(g.year)*60);B(8);F(10);g.morale=clamp(g.morale+4,5,95)}}
   else{B(-1);F(-2);g.morale=clamp(g.morale-1,5,95);
     if(u.stage===3){g.ach.uclFinal=true;M(eraK(g.year)*25);F(3)}}
   const impact={board:g.board-status0.board,fan:g.fan-status0.fan,morale:g.morale-status0.morale,money:g.money-status0.money};
-  pushFeed({type:'match',h:tie[0],a:tie[1],gh:gm,ga:go,scorers:scorers.sort((x,y)=>x.min-y.min),opScorers:[],red:null,round:g.round,rank:tableRank(g.clubId),cup:cupStageName(u.stage),pens:pens,key:true,impact:impact});
+  if(isGroup)applyTable(u.groupTables[u.userGroup],tie[0],tie[1],gm,go);
+  const cupLabel=isGroup?'欧冠小组赛 · 第'+(u.groupRound+1)+'轮':cupStageName(u.stage);
+  pushFeed({type:'match',h:tie[0],a:tie[1],gh:gm,ga:go,scorers:scorers.sort((x,y)=>x.min-y.min),opScorers:[],red:null,round:g.round,rank:tableRank(g.clubId),cup:cupLabel,cupNote:isGroup?'小组积分：'+uclGroupSummary(u):'',pens:pens,key:true,impact:impact});
   u.pendingTie=null;
-  advanceCup(u.winners.concat([winner]));
+  u.pendingKind=null;
+  if(isGroup){u.groupRound++;if(u.groupRound>=6)finishUCLGroups()}else advanceCup(u.winners.concat([winner]));
   if(g.round>=ROUNDS()){endSeason();return}
   if(g.round===WINTER())winterOpen();
   else g.phase='idle';
@@ -1505,7 +1547,7 @@ function isKeyMatch(nr){
   if(nr>=ROUNDS())return true;
   const fx=fixtureOf(nr);if(!fx)return false;
   const opp=fx[0]===g.clubId?fx[1]:fx[0];
-  if(CUPR().indexOf(nr)>=0)return true;
+  if(g.ucl&&g.ucl.userIn&&((UCL_GROUP_ROUNDS.indexOf(nr)>=0&&g.ucl.phase==='group')||(CUPR().indexOf(nr)>=0&&g.ucl.phase!=='group')))return true;
   if(clubRep(C[opp],g.year)>=5)return true;
   if(g.round>0&&tableRank(opp)<=4)return true;
   return false;
@@ -1838,8 +1880,8 @@ function endSeason(){
     }
   }
   const seeds=[];
-  for(const lg in g.lgs){const arr=sortTableOf(g.lgs[lg].table);seeds.push(arr[0][0],arr[1][0])}
-  const rest=Object.keys(g.cs).map(id=>C[id]).filter(c=>seeds.indexOf(c.id)<0).sort((a,b)=>clubOvr(b.id)-clubOvr(a.id)).slice(0,4);
+  for(const lg in g.lgs){const arr=sortTableOf(g.lgs[lg].table);for(const row of arr.slice(0,4))seeds.push(row[0])}
+  const rest=Object.keys(g.cs).map(id=>C[id]).filter(c=>seeds.indexOf(c.id)<0).sort((a,b)=>clubOvr(b.id)-clubOvr(a.id)).slice(0,8);
   g.uclSeed=seeds.concat(rest.map(c=>c.id));
   const rank=tableRank(g.clubId);const row=g.table[g.clubId];
   const rep=clubRep(C[g.clubId],g.year);const target=TARGETF()[rep];
@@ -1986,7 +2028,7 @@ let lastFeedLen=0;
 const SAVE_KEY='lvyr3';
 function save(){try{if(g&&!g.deal)localStorage.setItem(SAVE_KEY,JSON.stringify(g))}catch(e){}}
 function peekSave(){try{const s=localStorage.getItem(SAVE_KEY);if(!s)return null;const d=JSON.parse(s);return d&&d.v===2?d:null}catch(e){return null}}
-function load(){const d=peekSave();if(d){g=d;relink();if(!g.managedClubs)g.managedClubs={};if(!g.ballons)g.ballons=[];enforceManagedHistory();migratePlayerDevelopment();if(g.coachReport&&!g.coachReport.baseIds)migrateCoachReport(g.coachReport)}return d}
+function load(){const d=peekSave();if(d){g=d;relink();if(!g.managedClubs)g.managedClubs={};if(!g.ballons)g.ballons=[];enforceManagedHistory();migratePlayerDevelopment();migrateUCL();if(g.coachReport&&!g.coachReport.baseIds)migrateCoachReport(g.coachReport)}return d}
 function clearSave(){try{localStorage.removeItem(SAVE_KEY)}catch(e){}}
 function chipCls(v){return v>=60?'good':v>=35?'warn':'bad'}
 function MORALE_DESC(m){return m>=80?'火热':m>=60?'良好':m>=40?'低落':m>=20?'危机':'崩溃'}
@@ -2023,7 +2065,7 @@ function cardHtml(c){
     if(im.fan)impact.push('球迷 '+delta(im.fan));
     if(im.money)impact.push('奖金 '+(im.money>0?'+':'')+fmtM(im.money));
     const impactHtml=(labels.length||impact.length)?'<div class="match-impact'+(res==='lose'?' neg':'')+'">'+(labels.length?'<b>'+labels.join(' · ')+'</b>'+(impact.length?'　':''):'')+(impact.length?'赛后影响：'+impact.join(' · '):'状态没有变化')+'</div>':'';
-    return '<div class="card match"><span class="tag">'+(c.cup?('⚔️ '+c.cup):(c.lg||'联赛')+' · 第'+c.round+'轮')+'</span><div class="score-line"><div class="score-team"><b>'+C[c.h].name+'</b>主场</div><div class="score-num '+res+'">'+c.gh+' - '+c.ga+'</div><div class="score-team"><b>'+C[c.a].name+'</b>客场</div></div>'+(c.pens?'<p style="text-align:center">🥊 点球大战 '+c.pens[0]+' - '+c.pens[1]+'</p>':'')+(hls?'<ul class="highlights">'+hls+'</ul>':'')+impactHtml+'<p class="muted">'+(c.cup?'欧冠征程继续':'联赛排名：第 '+c.rank+' 位')+'</p></div>';
+    return '<div class="card match"><span class="tag">'+(c.cup?('⚔️ '+c.cup):(c.lg||'联赛')+' · 第'+c.round+'轮')+'</span><div class="score-line"><div class="score-team"><b>'+C[c.h].name+'</b>主场</div><div class="score-num '+res+'">'+c.gh+' - '+c.ga+'</div><div class="score-team"><b>'+C[c.a].name+'</b>客场</div></div>'+(c.pens?'<p style="text-align:center">🥊 点球大战 '+c.pens[0]+' - '+c.pens[1]+'</p>':'')+(hls?'<ul class="highlights">'+hls+'</ul>':'')+impactHtml+'<p class="muted">'+(c.cupNote?esc(c.cupNote):c.cup?'欧冠征程继续':'联赛排名：第 '+c.rank+' 位')+'</p></div>';
   }
   let h='<div class="card '+(c.cls||'')+'"><span class="tag">'+esc(c.tag||'')+'</span><h3>'+esc(c.title)+'</h3><p>'+esc(c.body||'')+'</p>';
   if(c.choice)h+='<p class="muted">你的选择：'+esc(c.choice)+'</p>';
@@ -2088,13 +2130,14 @@ function preMatchBrief(nr){
 }
 function matchCard(){
   let fx,home,opp,tag;
-  if(g.phase==='cupmatch'){fx=g.ucl.pendingTie;home=fx[0]===g.clubId;opp=home?fx[1]:fx[0];tag='⚔️ '+cupStageName(g.ucl.stage)}
+  if(g.phase==='cupmatch'){fx=g.ucl.pendingTie;home=fx[0]===g.clubId;opp=home?fx[1]:fx[0];tag='⚔️ '+(g.ucl.phase==='group'?'欧冠小组赛 · 第'+(g.ucl.groupRound+1)+'轮':cupStageName(g.ucl.stage))}
   else{fx=fixtureOf(g.round);home=fx[0]===g.clubId;opp=home?fx[1]:fx[0];tag=(LG[C[g.clubId].lg]||'联赛')+' 第 '+g.round+' 轮 · '+(home?'主场作战':'客场作战')}
   const os=g.cs[opp].sq.slice().sort(function(a,b){return b.abi-a.abi}).slice(0,3).map(function(p){return esc(cnOf(p.name))+'（'+ROLE_CN[roleOf(p)]+' '+p.abi+'）'}).join('、');
   const plan=coachPlan(opp,home),opPlan=opponentPlan(opp);
   const fcs=Object.keys(FORMATIONS);const ments=[['att','强攻 ⚔️'],['bal','平衡 ⚖️'],['def','固守 🛡️']];
   let h='<div class="card match"><span class="tag">'+tag+'</span><h3>vs '+C[opp].name+' <span class="muted">（'+LG[C[opp].lg]+(g.phase==='cupmatch'?'':' · 第'+tableRank(opp)+'位')+'）</span></h3>';
   h+='<p class="muted">对方核心：'+(os||'—')+'<br/>预计战术：'+FORM_LABEL[opPlan.fc]+' · '+tacticName('ment',opPlan.ment)+' · '+tacticName('style',opPlan.style)+'</p>';
+  if(g.phase==='cupmatch'&&g.ucl.phase==='group')h+='<p class="muted">当前小组：'+esc(uclGroupSummary(g.ucl))+'</p>';
   const planActive=g.tactic.fc===plan.fc&&g.tactic.ment===plan.ment&&(g.tactic.press||'mid')===plan.press&&(g.tactic.style||'bal')===plan.style&&!Array.isArray(g.manualXI);
   h+='<div class="result-line">教练组建议：'+FORM_LABEL[plan.fc]+' · '+tacticName('ment',plan.ment)+' · '+tacticName('press',plan.press)+' · '+tacticName('style',plan.style)+'<br/><span style="color:var(--muted)">'+plan.why+'</span><br/><button class="sbtn buy" style="margin-top:6px" data-act="apply-plan" data-fc="'+plan.fc+'" data-ment="'+plan.ment+'" data-press="'+plan.press+'" data-style="'+plan.style+'" '+(planActive?'disabled':'')+'>'+(planActive?'✓ 已采用':'采用建议')+'</button></div>';
   h+='<div class="section-title">阵型</div><div class="tactic-row">'+fcs.map(function(f){return '<button class="seg'+(g.tactic.fc===f?' on':'')+'" data-act="fc" data-v="'+f+'">'+FORM_LABEL[f]+'</button>'}).join('')+'</div>';
@@ -2206,7 +2249,7 @@ function leagueHtml(){
   h+='<table><tr><th>#</th><th>球队</th><th>赛</th><th>胜/平/负</th><th>净胜</th><th>分</th><th>近况</th></tr>';
   arr.forEach(function(r,i){const id=r[0],row=r[1];const gd=row.gf-row.ga;
     h+='<tr class="'+(id===g.clubId?'me ':'')+(i<2?'zone':'')+'"><td>'+(i+1)+'</td><td>'+C[id].name+'</td><td>'+(row.w+row.d+row.l)+'</td><td>'+row.w+'/'+row.d+'/'+row.l+'</td><td>'+(gd>0?'+':'')+gd+'</td><td><b>'+row.pts+'</b></td><td>'+(row.form||[]).map(function(f){return f==='W'?'🟢':f==='D'?'⚪':'🔴'}).join('')+'</td></tr>'});
-  return h+'</table><p class="tbl-note">🟢 各联赛前二晋级下赛季欧冠</p>';
+  return h+'</table><p class="tbl-note">🟢 各联赛前四优先晋级下赛季欧冠，其余名额按实力补足</p>';
 }
 function coachCard(){
   const cr=g.coachReport;if(!cr)return '';
@@ -2350,7 +2393,7 @@ function modalHtml(){
 }
 function startHtml(){
   const sv=g||peekSave();
-  let h='<div class="hero"><div class="logo">⚽</div><h1>绿茵人生</h1><p class="sub">足球经理文字模拟器 · 6大联赛 · 欧冠 · 无广告本地运行</p><p style="text-align:center;margin:-18px 0 22px"><span class="achip">v2.14 · 手动首发 · 历史名单 · 195俱乐部</span></p>';
+  let h='<div class="hero"><div class="logo">⚽</div><h1>绿茵人生</h1><p class="sub">足球经理文字模拟器 · 6大联赛 · 欧冠 · 无广告本地运行</p><p style="text-align:center;margin:-18px 0 22px"><span class="achip">v2.15 · 欧冠小组赛 · 手动首发 · 历史名单</span></p>';
   if(sv)h+='<button class="btn primary big mode" data-act="continue">继续执教 '+esc(C[sv.clubId].name)+'（'+LG[C[sv.clubId].lg]+' '+fmtS(sv.year)+'）</button>';
   h+='<button class="btn primary big mode" data-act="mode" data-m="rand">🎲 完全随机<small>年代与球队全部随机，刺激拉满</small></button>';
   h+='<button class="btn ghost big mode" data-act="mode" data-m="top">👑 豪门开局<small>皇马拜仁曼联……预算充裕，但必须夺冠</small></button>';

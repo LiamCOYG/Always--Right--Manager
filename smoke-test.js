@@ -78,15 +78,19 @@ function runFeatureChecks() {
   assertFeature(lineupUi.includes('data-act="lineup-toggle"') && lineupUi.includes('手动首发'), 'manual lineup UI');
   g.manualXI = null;
 
+  assertFeature(g.ucl.format === 'groups' && g.ucl.groups.length === 8 && g.ucl.groups.every(group => group.length === 4), 'UCL group draw');
+  assertFeature(g.ucl.userIn && g.feed.some(card => card.title === '欧冠小组赛抽签完成'), 'UCL group announcement');
   g.phase = 'idle';
-  g.round = CUPR()[0] - 1;
-  const cupTeams = [g.clubId].concat(Object.keys(g.cs).filter(id => id !== g.clubId).slice(0, 15));
-  const cupTies = [];
-  for (let i = 0; i < 16; i += 2) cupTies.push([cupTeams[i], cupTeams[i + 1]]);
-  g.ucl = {stage:0,ties:cupTies,userIn:true,winner:null,winners:[],pendingTie:null};
+  g.round = UCL_GROUP_ROUNDS[0] - 1;
   const gamesBeforeDelegate = g.stats.games;
   autoRound();
-  assertFeature(g.stats.games === gamesBeforeDelegate + 1 && g.phase !== 'cupmatch' && !g.ucl.pendingTie, 'delegated UCL transition');
+  assertFeature(g.stats.games === gamesBeforeDelegate + 1 && g.ucl.groupRound === 1 && g.phase !== 'cupmatch' && !g.ucl.pendingTie, 'delegated UCL group match');
+  for (let md = 1; md < UCL_GROUP_ROUNDS.length; md++) {
+    g.phase = 'idle'; g.round = UCL_GROUP_ROUNDS[md] - 1; autoRound();
+  }
+  assertFeature(g.ucl.phase === 'knockout' && g.ucl.stage === 0 && g.ucl.ties.length === 8, 'UCL round-of-16 draw');
+  const groupGames = Object.values(g.ucl.groupTables[g.ucl.userGroup]).map(r => r.w + r.d + r.l);
+  assertFeature(groupGames.every(n => n === 6), 'six UCL group matches');
   for (const lg in g.lgs) {
     for (const cid in g.lgs[lg].table) g.lgs[lg].table[cid].w = 10;
   }
@@ -124,7 +128,7 @@ function runFeatureChecks() {
 
   gameOver('sacked');
   assertFeature(jobOffers(0).length > 0, 'sacked re-employment');
-  console.log('FEATURE OK | historical rosters, detailed roles, manual XI, delegation, development, history');
+  console.log('FEATURE OK | historical rosters, manual XI, UCL groups, delegation, development, history');
 }
 `;
 
