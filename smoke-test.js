@@ -45,6 +45,8 @@ function runFeatureChecks() {
   assertFeature(anchor(2003, 'ars', 'Patrick Vieira')[5] === 'DM', 'Vieira detailed position');
   assertFeature(cnOf('Ray Parlour') === '雷·帕洛尔' && cnOf('Gary Neville') === '加里·内维尔', 'manual name translations');
   assertFeature(cnOf('Unmapped Testname') === 'Unmapped Testname', 'safe untranslated-name fallback');
+  assertFeature(matchScore('球王', SEARCH_ALIAS['球王'], 'Lionel Messi') === 100 && matchScore('球王', SEARCH_ALIAS['球王'], 'Cristiano Ronaldo') === 100 && matchScore('球王', SEARCH_ALIAS['球王'], 'C罗') === 100, 'multi-player nickname search');
+  assertFeature(matchScore('武僧', SEARCH_ALIAS['武僧'], 'Pepe') === 100 && matchScore('汉堡王', SEARCH_ALIAS['汉堡王'], 'Eden Hazard') === 100 && matchScore('魔笛', SEARCH_ALIAS['魔笛'], 'Luka Modrić') === 100, 'Chinese football nicknames');
   assertFeature(ROSTERS[1996].aja.length >= 20 && ['Edwin van der Sar','Jari Litmanen','Patrick Kluivert'].every(n => ROSTERS[1996].aja.some(p => p[0] === n)), '1996 Ajax real roster');
   assertFeature(!ROSTERS[1996].aja.some(p => p[0].includes('伊万诺夫')), '1996 Ajax excludes generated Ivanov');
   const che2016 = ROSTERS[2016].che, cheRole = name => che2016.find(p => p[0] === name);
@@ -92,12 +94,28 @@ function runFeatureChecks() {
   }
   coachReport();
   assertFeature(coachNeeds(g.coachReport).every(n=>n.pos!=='GK'&&n.pos!=='FW'), '2016 Chelsea does not request goalkeeper/forward');
+  g.clubId='che';g.uclSeed=null;startUCL();
+  assertFeature(!g.ucl.userIn, '2016 Chelsea correctly misses Champions League');
+  assertFeature(g.ucl.groups.every(group=>new Set(group.map(id=>C[id].lg)).size===group.length), 'UCL groups avoid same-league clubs');
   newGame('top');g.deal=false;
   const capped = genPlayer('FW', 92, g.year, {club:C[g.clubId],age:18,abi:92});
   assertFeature(capped.abi <= 74 && capped.pot >= 90 && capped.generated, 'generated 18-year-old ability cap');
   const realStart = newGame('rand', 'real');
   assertFeature(realStart.worldStyle === 'real' && ROSTERS[realStart.year] && ROSTERS[realStart.year][realStart.clubId], 'real-history start always has roster data');
   assertFeature(Object.values(realStart.lgMembers).flat().every(cid => realStart.cs[cid] && realStart.cs[cid].sq.length), 'real-history start keeps complete simulated world');
+  g = newGame('top', 'real', 'transfer');g.deal=false;openMarket('summer');
+  const showTargets=g.market.filter(m=>m.type==='star');
+  assertFeature(g.playStyle==='transfer'&&showTargets.length>=6&&showTargets.every(m=>recognizablePlayer(m)&&!m.generated), 'transfer-only market prioritizes recognizable real players');
+  const showTarget=showTargets[0],showIndex=g.market.indexOf(showTarget);g.money=Math.max(g.money,showTarget.price+1);
+  assertFeature(buyPlayer(showIndex)&&SQ().some(p=>p.name===showTarget.name)&&!g.cs[showTarget.from].sq.some(p=>p.name===showTarget.name), 'featured star transfer moves the real player');
+  const ordinaryOld={name:'Generated Veteran',generated:true,age:29,abi:90,pot:90};developPlayer(ordinaryOld,30);
+  assertFeature(ordinaryOld.age===30&&ordinaryOld.abi<=89, 'transfer-only ordinary decline starts at 30');
+  const famousOld={name:'Lionel Messi',lg:true,age:32,abi:95,pot:98};developPlayer(famousOld,30);
+  assertFeature(famousOld.age===33&&famousOld.abi>=94, 'transfer-only star declines slowly through 33');
+  famousOld.age=33;famousOld.abi=95;developPlayer(famousOld,30);
+  assertFeature(famousOld.age===34&&famousOld.abi<=91, 'transfer-only cliff decline starts at 34');
+  finishWindow();
+  assertFeature(g.phase==='window'&&g.marketType==='winter'&&g.round===WINTER()&&g.feed.some(c=>c.tag==='⏩ 比赛已跳过'), 'transfer-only closes summer into winter automatically');
   g.deal = false;
   const southAmerican = {name:'Appeal Test',nat:'ARG',dreamClub:null};
   assertFeature(clubAppeal('rma',southAmerican,'aja') >= CLUB_APPEAL.rma + 18, 'Real Madrid South American appeal bonus');
@@ -108,8 +126,11 @@ function runFeatureChecks() {
   loyal.loyalty=20;loyal.ambition=95;loyal.moneyDrive=90;loyal.blockedMoves=0;
   applyBlockedMove(loyal,{appealGap:20});applyBlockedMove(loyal,{appealGap:20});
   assertFeature(loyal.unsettled > 0 && loyal.noRenew, 'repeated blocked move causes unrest and no-renewal');
-  ui.startStyle=null;
-  assertFeature(startHtml().includes('真实历史') && startHtml().includes('梦幻世界'), 'two-stage world-style selection');
+  ui.startStyle=null;ui.playStyle=null;
+  assertFeature(startHtml().includes('真实历史') && startHtml().includes('梦幻世界'), 'world-style selection');
+  ui.startStyle='real';
+  assertFeature(startHtml().includes('完整执教') && startHtml().includes('转会爽剧'), 'play-style selection');
+  ui.playStyle='full';
   const topBar = renderTop();
   assertFeature(topBar.indexOf('⚡实力') < topBar.indexOf('ⓘ 状态影响'), 'strength chip kept in visible leading group');
   const lowCid=appealRanking(null).slice(-1)[0].cid;g.clubId=lowCid;relink();g.round=10;
@@ -162,7 +183,9 @@ function runFeatureChecks() {
   assertFeature(lineupUi.includes('data-act="lineup-toggle"') && lineupUi.includes('手动首发'), 'manual lineup UI');
   g.manualXI = null;
 
+  g.uclSeed=[g.clubId];startUCL();
   assertFeature(g.ucl.format === 'groups' && g.ucl.groups.length === 8 && g.ucl.groups.every(group => group.length === 4), 'UCL group draw');
+  assertFeature(g.ucl.groups.every(group=>new Set(group.map(id=>C[id].lg)).size===group.length), 'all UCL groups have unique leagues');
   assertFeature(g.ucl.userIn && g.feed.some(card => card.title === '欧冠小组赛抽签完成'), 'UCL group announcement');
   g.phase = 'idle';
   g.round = UCL_GROUP_ROUNDS[0] - 1;
