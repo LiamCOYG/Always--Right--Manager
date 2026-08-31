@@ -33,6 +33,11 @@ function runFeatureChecks() {
     }
   }
   assertFeature(historicalTeams >= 1200 && historicalPlayers >= 30000, 'historical coverage');
+  let modernPlayers=0,modernRoles=0;
+  for(let year=2008;year<=2026;year++)for(const cid in (ROSTERS[year]||{}))for(const p of ROSTERS[year][cid]){
+    modernPlayers++;if(p[5]){modernRoles++;assertFeature(roleGroup(p[5])===p[1],year+':'+cid+':'+p[0]+' detailed-role group mismatch')}
+  }
+  assertFeature(modernRoles>=37000&&modernRoles/modernPlayers>.75,'modern detailed-role coverage '+modernRoles+'/'+modernPlayers);
   const anchor = (year, cid, name) => (ROSTERS[year][cid] || []).find(p => p[0] === name);
   assertFeature(anchor(1993, 'mun', 'Peter Schmeichel')[4] >= 92, 'Schmeichel anchor');
   assertFeature(anchor(1995, 'mil', 'Franco Baresi')[4] >= 94, 'Baresi anchor');
@@ -42,6 +47,9 @@ function runFeatureChecks() {
   assertFeature(cnOf('Unmapped Testname') === 'Unmapped Testname', 'safe untranslated-name fallback');
   assertFeature(ROSTERS[1996].aja.length >= 20 && ['Edwin van der Sar','Jari Litmanen','Patrick Kluivert'].every(n => ROSTERS[1996].aja.some(p => p[0] === n)), '1996 Ajax real roster');
   assertFeature(!ROSTERS[1996].aja.some(p => p[0].includes('伊万诺夫')), '1996 Ajax excludes generated Ivanov');
+  const che2016 = ROSTERS[2016].che, cheRole = name => che2016.find(p => p[0] === name);
+  assertFeature(cheRole('Eden Hazard')[1] === 'FW' && cheRole('Eden Hazard')[5] === 'LW', 'Hazard real role');
+  assertFeature(cheRole('Diego Costa')[5] === 'ST' && cheRole('Marcos Alonso')[5] === 'LWB', 'Chelsea real detailed roles');
 
   g = { uid: 1, year: 2011 };
   const salah = mkPlayer({name:'Mohamed Salah',nat:'EGY',pos:'FW',age:20,abi:78,pot:80});
@@ -73,6 +81,18 @@ function runFeatureChecks() {
 
   newGame('top');
   g.deal = false;
+  g.year=2016;g.cs[g.clubId].sq=che2016.map(r=>mkPlayer({name:r[0],pos:r[1],age:r[3],abi:r[2],pot:r[4],role:r[5]}));
+  const oldSaveHazard=g.cs[g.clubId].sq.find(p=>p.name==='Eden Hazard');oldSaveHazard.pos='MF';delete oldSaveHazard.role;migratePlayerPositions();
+  assertFeature(oldSaveHazard.pos==='FW'&&oldSaveHazard.role==='LW','old-save detailed-position migration');
+  for(const fc of Object.keys(FORMATIONS)){
+    const autoXI=pickXI(SQ(),fc),hazard=autoXI.find(p=>p.name==='Eden Hazard');
+    assertFeature(!hazard||roleGroup(hazard._slot)==='FW', 'Hazard never auto-selected outside attack in '+fc);
+    for(const p of autoXI)if(roleGroup(p._slot)==='DF'||roleGroup(p._slot)==='GK')assertFeature(roleGroup(p._slot)===p.pos, 'automatic XI cross-line defender: '+p.name+' at '+p._slot);
+    clearXI(autoXI);
+  }
+  coachReport();
+  assertFeature(coachNeeds(g.coachReport).every(n=>n.pos!=='GK'&&n.pos!=='FW'), '2016 Chelsea does not request goalkeeper/forward');
+  newGame('top');g.deal=false;
   const capped = genPlayer('FW', 92, g.year, {club:C[g.clubId],age:18,abi:92});
   assertFeature(capped.abi <= 74 && capped.pot >= 90 && capped.generated, 'generated 18-year-old ability cap');
   const realStart = newGame('rand', 'real');
@@ -118,7 +138,7 @@ function runFeatureChecks() {
 
   const savedMoney = g.money;
   g.money = 0; g.phase = 'window'; g.marketType = 'winter'; g.mq = '';
-  if (g.market[0]) g.market[0].price = Math.max(1, g.market[0].price || 1);
+  for(const item of g.market)item.price=Math.max(1,item.price||1);
   assertFeature(marketListHtml().includes('data-src="market"'), 'listed-market petition entry');
   if (!secondNeed.targets.length) secondNeed.targets.push({name:'Coach Petition Test',pos:secondNeed.pos,age:21,abi:72,pot:90,price:100});
   secondNeed.targets[0].price = Math.max(1, secondNeed.targets[0].price);
