@@ -11,6 +11,29 @@ function assertFeature(value, message) {
   if (!value) throw new Error(message);
 }
 function runFeatureChecks() {
+  let historicalTeams = 0, historicalPlayers = 0;
+  for (let year = 1993; year <= 2007; year++) {
+    const clubs = ROSTERS[year] || {};
+    for (const cid in clubs) {
+      const squad = clubs[cid];
+      historicalTeams++;
+      historicalPlayers += squad.length;
+      assertFeature(squad.length >= 16 && squad.length <= 24, year + ':' + cid + ' squad size ' + squad.length);
+      for (const p of squad) {
+        assertFeature(typeof p[0] === 'string' && p[0] && !p[0].includes('�'), year + ':' + cid + ' invalid name');
+        assertFeature(['GK','DF','MF','FW'].includes(p[1]), year + ':' + cid + ' invalid position');
+        assertFeature(Number.isFinite(p[2]) && p[2] >= 45 && p[2] <= 99, year + ':' + cid + ' invalid ability');
+        assertFeature(Number.isFinite(p[3]) && p[3] >= 15 && p[3] <= 50, year + ':' + cid + ' invalid age');
+        assertFeature(Number.isFinite(p[4]) && p[4] >= p[2] && p[4] <= 99, year + ':' + cid + ' invalid potential');
+      }
+    }
+  }
+  assertFeature(historicalTeams >= 1200 && historicalPlayers >= 30000, 'historical coverage');
+  const anchor = (year, cid, name) => (ROSTERS[year][cid] || []).find(p => p[0] === name);
+  assertFeature(anchor(1993, 'mun', 'Peter Schmeichel')[4] >= 92, 'Schmeichel anchor');
+  assertFeature(anchor(1995, 'mil', 'Franco Baresi')[4] >= 94, 'Baresi anchor');
+  assertFeature(anchor(1995, 'flo', 'Gabriel Batistuta')[4] >= 92, 'Batistuta anchor');
+
   g = { uid: 1, year: 2011 };
   const salah = mkPlayer({name:'Mohamed Salah',nat:'EGY',pos:'FW',age:20,abi:78,pot:80});
   prepareSigning(salah);
@@ -76,7 +99,7 @@ function runFeatureChecks() {
 
   gameOver('sacked');
   assertFeature(jobOffers(0).length > 0, 'sacked re-employment');
-  console.log('FEATURE OK | potential, aging, Ballon dOr, history, dropped-club switch, re-employment');
+  console.log('FEATURE OK | historical rosters, potential, aging, Ballon dOr, history, dropped-club switch, re-employment');
 }
 `;
 
