@@ -47,6 +47,11 @@ function runFeatureChecks() {
   assertFeature(cnOf('Unmapped Testname') === 'Unmapped Testname', 'safe untranslated-name fallback');
   assertFeature(matchScore('球王', SEARCH_ALIAS['球王'], 'Lionel Messi') === 100 && matchScore('球王', SEARCH_ALIAS['球王'], 'Cristiano Ronaldo') === 100 && matchScore('球王', SEARCH_ALIAS['球王'], 'C罗') === 100, 'multi-player nickname search');
   assertFeature(matchScore('武僧', SEARCH_ALIAS['武僧'], 'Pepe') === 100 && matchScore('汉堡王', SEARCH_ALIAS['汉堡王'], 'Eden Hazard') === 100 && matchScore('魔笛', SEARCH_ALIAS['魔笛'], 'Luka Modrić') === 100, 'Chinese football nicknames');
+  assertFeature(matchScore('冰王子', SEARCH_ALIAS['冰王子'], 'Dennis Bergkamp') === 100 && matchScore('核弹头', SEARCH_ALIAS['核弹头'], 'Andriy Shevchenko') === 100 && matchScore('追风少年', SEARCH_ALIAS['追风少年'], 'Michael Owen') === 100, 'classic nickname catalogue');
+  assertFeature(matchScore('狼王', SEARCH_ALIAS['狼王'], 'Francesco Totti') === 100 && matchScore('球玉', SEARCH_ALIAS['球玉'], 'Cristiano Ronaldo') === 100 && matchScore('汉堡王', SEARCH_ALIAS['汉堡王'], 'Eden Hazard') === 100, 'existing nicknames remain after catalogue merge');
+  assertFeature(matchScore('范退退', SEARCH_ALIAS['范退退'], 'Virgil van Dijk') === 100 && normalizeSearchQuery('‌范退退')==='范退退', 'fan nickname for Van Dijk and zero-width cleanup');
+  assertFeature(matchScore('小毛驴', SEARCH_ALIAS['小毛驴'], 'Ariel Ortega') === 100 && matchScore('小毛驴', SEARCH_ALIAS['小毛驴'], 'Cristiano Ronaldo') === 0, 'nickname corrections reject bad source pairing');
+  assertFeature(matchScore('战神', SEARCH_ALIAS['战神'], 'Gabriel Batistuta') === 100 && matchScore('战神', SEARCH_ALIAS['战神'], 'Diego Maradona') === 0, 'Batistuta nickname correction');
   assertFeature(ROSTERS[1996].aja.length >= 20 && ['Edwin van der Sar','Jari Litmanen','Patrick Kluivert'].every(n => ROSTERS[1996].aja.some(p => p[0] === n)), '1996 Ajax real roster');
   assertFeature(!ROSTERS[1996].aja.some(p => p[0].includes('伊万诺夫')), '1996 Ajax excludes generated Ivanov');
   const che2016 = ROSTERS[2016].che, cheRole = name => che2016.find(p => p[0] === name);

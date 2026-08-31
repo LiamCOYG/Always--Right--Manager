@@ -645,6 +645,120 @@ const SEARCH_ALIAS={
   '卡大佐':['Edinson Cavani','卡瓦尼'],'小威胁':['Jack Wilshere','威尔谢尔'],'背锅侠':['Karim Benzema','本泽马'],'二娃':['Thomas Muller','Thomas Müller','穆勒'],
   '小猪':['Bastian Schweinsteiger','施魏因斯泰格'],'魔笛':['Luka Modric','Luka Modrić','莫德里奇'],'美颜':['Diego Costa','迭戈·科斯塔']
 };
+function addSearchAliases(aliases,targets){
+  for(const alias of aliases){
+    const key=String(alias).toLowerCase().replace(/[\u200b-\u200d\u2060\ufeff]/g,'').trim(),old=SEARCH_ALIAS[key]||[],list=Array.isArray(old)?old:[old];
+    SEARCH_ALIAS[key]=Array.from(new Set(list.concat(targets)));
+  }
+}
+[
+  [['外星人','现象','o fenômeno'],['Ronaldo','罗纳尔多']],
+  [['忧郁王子','神圣马尾辫','梦幻王子','小髻王'],['Roberto Baggio','罗伯特·巴乔','巴乔']],
+  [['独狼','小矮人'],['Romario','Romário','罗马里奥']],
+  [['非洲之王'],['George Weah','乔治·维阿','维阿']],
+  [['战神','巴蒂goal','batigol'],['Gabriel Batistuta','巴蒂斯图塔']],
+  [['皮波','superpippo','机会主义者'],['Filippo Inzaghi','菲利波·因扎吉','因扎吉']],
+  [['魔术盒','magic box'],['Gianfranco Zola','佐拉']],
+  [['魔术师'],['Gianfranco Zola','佐拉','Andres Iniesta','Andrés Iniesta','伊涅斯塔']],
+  [['加扎','gazza','小丑王子','大顽童'],['Paul Gascoigne','保罗·加斯科因','加斯科因']],
+  [['喀尔巴阡山马拉多纳','中场阴谋家'],['Gheorghe Hagi','哈吉']],
+  [['冰王子','不会飞的荷兰人'],['Dennis Bergkamp','博格坎普']],
+  [['金色轰炸机'],['Jurgen Klinsmann','Jürgen Klinsmann','克林斯曼']],
+  [['齐祖','zizou'],['Zinedine Zidane','齐达内']],
+  [['足球精灵','微笑足球'],['Ronaldinho','小罗']],
+  [['海布里之王','亨利王','亨神','titi'],['Thierry Henry','亨利']],
+  [['核弹头','sheva'],['Andriy Shevchenko','Andrei Shevchenko','舍甫琴科']],
+  [['铁人','捷克铁人'],['Pavel Nedved','Pavel Nedvěd','内德维德']],
+  [['布皇','superman'],['Gianluigi Buffon','布冯']],
+  [['柏林墙'],['Fabio Cannavaro','卡纳瓦罗']],
+  [['斑马王子'],['Alessandro Del Piero','皮耶罗']],
+  [['罗马王子'],['Francesco Totti','托蒂','Giuseppe Giannini','贾尼尼']],
+  [['大孩子','狼王'],['Francesco Totti','托蒂']],
+  [['神奇队长','stevie g'],['Steven Gerrard','杰拉德']],
+  [['super frank','进球中场'],['Frank Lampard','兰帕德']],
+  [['小胖','wazza'],['Wayne Rooney','鲁尼']],
+  [['魔兽'],['Didier Drogba','德罗巴']],
+  [['猎豹'],['Samuel Eto o',"Samuel Eto'o",'埃托奥']],
+  [['禁区之王','van gol'],['Ruud van Nistelrooy','范尼斯特鲁伊','范尼']],
+  [['泰山','小狮王','狮王'],['Carles Puyol','普约尔']],
+  [['建筑师'],['Andrea Pirlo','皮尔洛']],
+  [['葫芦娃','西班牙武士'],['David Villa','比利亚']],
+  [['圣卡西','san iker'],['Iker Casillas','卡西利亚斯']],
+  [['跳蚤','小跳蚤','梅老板','la pulga'],['Lionel Messi','梅西']],
+  [['小小罗','罗总','o comandante'],['Cristiano Ronaldo','C罗']],
+  [['小白','大脑'],['Andres Iniesta','Andrés Iniesta','伊涅斯塔']],
+  [['大师','el maestro'],['Xavi','哈维']],
+  [['内少'],['Neymar','内马尔']],
+  [['苏牙','苏神','牙皇','龅牙苏','el pistolero'],['Luis Suarez','Luis Suárez','苏亚雷斯']],
+  [['奉先','上帝','大魔王','zlatan'],['Zlatan Ibrahimovic','Zlatan Ibrahimović','伊布']],
+  [['绝平先生'],['Sergio Ramos','拉莫斯']],
+  [['节拍器'],['Sergio Busquets','布斯克茨']],
+  [['小飞侠'],['Arjen Robben','罗本']],
+  [['疤面煞星','scarface'],['Franck Ribery','Franck Ribéry','里贝里']],
+  [['门卫','拖鞋'],['Manuel Neuer','诺伊尔']],
+  [['阿昆','kun'],['Sergio Aguero','Sergio Agüero','阿圭罗']],
+  [['亚亚'],['Yaya Toure','Yaya Touré','亚亚·图雷']],
+  [['kb9','卡里姆'],['Karim Benzema','本泽马']],
+  [['大圣'],['Gareth Bale','贝尔']],
+  [['章鱼','波霸'],['Paul Pogba','博格巴']],
+  [['魔人','终结者','进球机器'],['Erling Haaland','哈兰德']],
+  [['神龟'],['Kylian Mbappe','Kylian Mbappé','姆巴佩']],
+  [['小维尼','vini jr'],['Vinicius Junior','Vinícius Júnior','维尼修斯']],
+  [['hey jude','贝林'],['Jude Bellingham','贝林厄姆']],
+  [['kdb','丁丁'],['Kevin De Bruyne','德布劳内']],
+  [['埃及法老','埃及梅西'],['Mohamed Salah','萨拉赫']],
+  [['lewy'],['Robert Lewandowski','莱万多夫斯基','莱万']],
+  [['hurrikane','飓风'],['Harry Kane','凯恩']],
+  [['佩神'],['Pedri','佩德里']],
+  [['库神'],['Thibaut Courtois','库尔图瓦']],
+  [['范神','范退退'],['Virgil van Dijk','范戴克']],
+  [['小恶魔'],['Antoine Griezmann','格列兹曼']],
+  [['天使','面条','el fideo'],['Angel Di Maria','Ángel Di María','迪马利亚']],
+  [['劳神','公牛','el toro'],['Lautaro Martinez','Lautaro Martínez','劳塔罗']],
+  [['兔子'],['Javier Saviola','萨维奥拉']],
+  [['国王阿德','皇帝'],['Adriano','阿德里亚诺']],
+  [['小毛驴'],['Ariel Ortega','阿里埃尔·奥特加','奥特加']],
+  [['风之子'],['Claudio Caniggia','卡尼吉亚']],
+  [['中国男孩'],['Alvaro Recoba','Álvaro Recoba','雷科巴']],
+  [['波波'],['Christian Vieri','维埃里']],
+  [['野兽'],['Julio Baptista','Júlio Baptista','巴普蒂斯塔']],
+  [['屠夫'],['Thomas Gravesen','格拉维森']],
+  [['左路之王'],['Ryan Giggs','吉格斯']],
+  [['血腥杀手'],['Jean-Pierre Papin','帕潘']],
+  [['绿茵王子'],['Enzo Francescoli','弗朗西斯科利']],
+  [['华尔兹大师'],['Michael Laudrup','米·劳德鲁普']],
+  [['世界第一门'],['Walter Zenga','曾加']],
+  [['追风少年'],['Michael Owen','欧文']],
+  [['圣婴','托妞'],['Fernando Torres','托雷斯']],
+  [['金毛狮王'],['Carlos Valderrama','巴尔德拉马']],
+  [['巴神'],['Mario Balotelli','巴洛特利']],
+  [['j罗'],['James Rodriguez','James Rodríguez','哈梅斯·罗德里格斯']],
+  [['b费'],['Bruno Fernandes','布鲁诺·费尔南德斯']],
+  [['b席'],['Bernardo Silva','B席']],
+  [['拉师傅'],['Marcus Rashford','拉什福德']],
+  [['小孩哥'],['Kobbie Mainoo','梅努']],
+  [['转转','陀螺'],['Antony','安东尼']],
+  [['货轮'],['Rasmus Hojlund','Rasmus Højlund','霍伊伦']],
+  [['胖德'],['Matthijs de Ligt','德里赫特']],
+  [['冰冷帕尔默'],['Cole Palmer','帕尔默']],
+  [['孙纳尔多'],['Son Heung-min','孙兴慜']],
+  [['黑天鹅'],['Frank Rijkaard','里杰卡尔德']],
+  [['野猪'],['Edgar Davids','戴维斯']],
+  [['头盔侠'],['Petr Cech','Petr Čech','切赫']],
+  [['朴三肺'],['Park Ji-sung','朴智星']],
+  [['龙哥'],['Xabi Alonso','哈维·阿隆索']],
+  [['2弟','二弟'],['Mauro Icardi','伊卡尔迪']],
+  [['小烟枪'],['Gonzalo Higuain','Gonzalo Higuaín','伊瓜因']],
+  [['佩刀'],['Pedro','Pedro Rodriguez','佩德罗']],
+  [['扎球王'],['Eden Hazard','阿扎尔']],
+  [['天王盖地虎'],['Olivier Giroud','吉鲁']],
+  [['大球终结者'],['Alvaro Morata','Álvaro Morata','莫拉塔']],
+  [['374'],['Alexis Sanchez','Alexis Sánchez','桑切斯']],
+  [['瑞士梅西','小钢炮'],['Xherdan Shaqiri','沙奇里']],
+  [['武球王'],['Wu Lei','武磊']]
+].forEach(row=>addSearchAliases(row[0],row[1]));
+addSearchAliases(['球王'],['Diego Maradona','马拉多纳']);
+function normalizeSearchQuery(q){return String(q||'').toLowerCase().replace(/[\u200b-\u200d\u2060\ufeff]/g,'').trim()}
 function levB(a,b,max){
   if(Math.abs(a.length-b.length)>max)return max+1;
   const m=a.length,n=b.length;
@@ -2590,8 +2704,8 @@ function coachCard(){
   return h;
 }
 function searchAll(q){
-  q=q.toLowerCase();
-  const ql=SEARCH_ALIAS[q]||null;
+  q=normalizeSearchQuery(q);
+  const ql=SEARCH_ALIAS[q]||SEARCH_ALIAS[q.replace(/\s+/g,'')]||null;
   const out=[];
   const push=(m,sc)=>{m._sc=sc;out.push(m)};
   for(const cid in g.cs){
@@ -2643,7 +2757,7 @@ function petitionChance(t,reason){
 }
 function marketListHtml(){
   const open=g.phase==='window';
-  const q=(g.mq||'').trim().toLowerCase();const mp=g.mpos||'';
+  const q=normalizeSearchQuery(g.mq);const mp=g.mpos||'';
   if(q){
     const res=searchAll(q).filter(m=>!mp||m.pos===mp);
     g.searchCache=res;
