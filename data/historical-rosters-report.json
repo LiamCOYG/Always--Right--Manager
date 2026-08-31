@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-31T05:33:56.552Z",
+  "generatedAt": "2026-08-31T05:53:06.398Z",
   "source": "FootballSquads.com + Kaggle daguizer/fifa-2021-to-2005-complete-player-attributes",
   "years": [
     "1993",
@@ -20,9 +20,10 @@
   ],
   "teamSeasons": 1253,
   "players": 30041,
+  "detailedRoles": 16552,
   "fifaExact": 8140,
-  "fifaBackcast": 9220,
-  "legendRated": 129,
+  "fifaBackcast": 9221,
+  "legendRated": 128,
   "estimated": 12552,
   "exactFifaRate": 78.4,
   "omittedTeams": [

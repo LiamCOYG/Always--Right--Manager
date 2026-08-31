@@ -188,6 +188,15 @@ function findRating(player, db) {
   for (const p of candidates) { const s = nameScore(player.name, p.name); if (s > score) { best = p; score = s; } }
   return score >= 55 ? best : null;
 }
+function detailedRole(value, broad) {
+  const aliases = {GK:'GK',CB:'CB',LCB:'CB',RCB:'CB',SW:'CB',LB:'LB',RB:'RB',LWB:'LWB',RWB:'RWB',CDM:'DM',LCDM:'DM',RCDM:'DM',LDM:'DM',RDM:'DM',DM:'DM',CM:'CM',LCM:'CM',RCM:'CM',CAM:'AM',LCAM:'AM',RCAM:'AM',LAM:'AM',RAM:'AM',AM:'AM',LM:'LM',LWM:'LM',RM:'RM',RWM:'RM',LW:'LW',LF:'LW',RW:'RW',RF:'RW',CF:'SS',SS:'SS',ST:'ST',LS:'ST',RS:'ST'};
+  const groups = {GK:'GK',CB:'DF',LB:'DF',RB:'DF',LWB:'DF',RWB:'DF',DM:'MF',CM:'MF',AM:'MF',LM:'MF',RM:'MF',LW:'FW',RW:'FW',SS:'FW',ST:'FW'};
+  for (const token of String(value || '').toUpperCase().split(/[^A-Z]+/)) {
+    const role = aliases[token];
+    if (role && groups[role] === broad) return role;
+  }
+  return '';
+}
 function hash(value) { let h = 2166136261; for (const ch of String(value)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 function loadGameData() {
   const vm = require('vm');
@@ -232,6 +241,8 @@ function playerArray(player, year, club, ratings, game, stats) {
   }
   if (legend) pot = Math.max(pot || abi, legend.abi);
   const result = [player.name,player.pos,abi,age,Math.max(abi,pot || abi)];
+  const role = detailedRole(rated && rated.positions, player.pos);
+  if (role) result.push(role);
   result.ratingSource = ratingSource;
   return result;
 }
@@ -269,7 +280,7 @@ async function discover() {
 async function build() {
   const game = loadGameData(), clubById = Object.fromEntries(game.CLUBS.map(c => [c.id, c]));
   const ratings = loadRatings(), history = {}, omitted = new Set();
-  const stats = {teams:0,players:0,fifaExact:0,fifaBackcast:0,legendRated:0,estimated:0,shortSquads:[]};
+  const stats = {teams:0,players:0,detailedRoles:0,fifaExact:0,fifaBackcast:0,legendRated:0,estimated:0,shortSquads:[]};
   const leagueJobs = [];
   for (const cfg of LEAGUES) for (let year = cfg.from; year <= cfg.to; year++) leagueJobs.push({cfg:cfg,year:year,url:new URL(cfg.url(year), BASE).href});
   const leaguePages = await mapLimit(leagueJobs, 4, async job => Object.assign({}, job, {html:await get(job.url)}));
@@ -286,12 +297,12 @@ async function build() {
     if (roster.length < 16) { stats.shortSquads.push(page.year + ':' + page.clubId + ':' + roster.length); continue; }
     if (!history[page.year]) history[page.year] = {};
     history[page.year][page.clubId] = roster; stats.teams++; stats.players += roster.length;
-    for (const p of roster) stats[p.ratingSource]++;
+    for (const p of roster) { stats[p.ratingSource]++; if (p[5]) stats.detailedRoles++; }
   }
   const years = Object.keys(history).sort();
   const report = {
     generatedAt:new Date().toISOString(),source:'FootballSquads.com + Kaggle daguizer/fifa-2021-to-2005-complete-player-attributes',
-    years:years,teamSeasons:stats.teams,players:stats.players,fifaExact:stats.fifaExact,fifaBackcast:stats.fifaBackcast,legendRated:stats.legendRated,
+    years:years,teamSeasons:stats.teams,players:stats.players,detailedRoles:stats.detailedRoles,fifaExact:stats.fifaExact,fifaBackcast:stats.fifaBackcast,legendRated:stats.legendRated,
     estimated:stats.estimated,exactFifaRate:Number((stats.fifaExact / Math.max(1, Object.values(history).slice(-4).flatMap(Object.values).flat().length) * 100).toFixed(1)),
     omittedTeams:[...omitted].sort(),shortSquads:stats.shortSquads
   };

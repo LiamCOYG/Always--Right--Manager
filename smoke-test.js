@@ -25,6 +25,7 @@ function runFeatureChecks() {
         assertFeature(Number.isFinite(p[2]) && p[2] >= 45 && p[2] <= 99, year + ':' + cid + ' invalid ability');
         assertFeature(Number.isFinite(p[3]) && p[3] >= 15 && p[3] <= 50, year + ':' + cid + ' invalid age');
         assertFeature(Number.isFinite(p[4]) && p[4] >= p[2] && p[4] <= 99, year + ':' + cid + ' invalid potential');
+        assertFeature(p[5] == null || Object.prototype.hasOwnProperty.call(ROLE_CN, p[5]), year + ':' + cid + ' invalid detailed role');
       }
     }
   }
@@ -33,6 +34,9 @@ function runFeatureChecks() {
   assertFeature(anchor(1993, 'mun', 'Peter Schmeichel')[4] >= 92, 'Schmeichel anchor');
   assertFeature(anchor(1995, 'mil', 'Franco Baresi')[4] >= 94, 'Baresi anchor');
   assertFeature(anchor(1995, 'flo', 'Gabriel Batistuta')[4] >= 92, 'Batistuta anchor');
+  assertFeature(anchor(2003, 'ars', 'Patrick Vieira')[5] === 'DM', 'Vieira detailed position');
+  assertFeature(cnOf('Ray Parlour') === '雷·帕洛尔' && cnOf('Gary Neville') === '加里·内维尔', 'manual name translations');
+  assertFeature(cnOf('Unmapped Testname') === 'Unmapped Testname', 'safe untranslated-name fallback');
 
   g = { uid: 1, year: 2011 };
   const salah = mkPlayer({name:'Mohamed Salah',nat:'EGY',pos:'FW',age:20,abi:78,pot:80});
@@ -64,6 +68,25 @@ function runFeatureChecks() {
 
   newGame('top');
   g.deal = false;
+  assertFeature(preMatchBrief(1).includes('data-act="accept-brief"'), 'actionable pre-match brief');
+  const selectable = SQ().filter(p => !p.inj && !p.ban).slice(0, 11);
+  g.manualXI = selectable.map(p => p.id);
+  const selectedTeam = teamStrength(g.clubId, g.tactic.fc, g.tactic.ment, false);
+  assertFeature(selectedTeam.xi.length === 11 && selectedTeam.xi.every(p => g.manualXI.includes(p.id)), 'manual starting XI');
+  g.phase = 'match'; g.round = 1;
+  const lineupUi = matchCard();
+  assertFeature(lineupUi.includes('data-act="lineup-toggle"') && lineupUi.includes('手动首发'), 'manual lineup UI');
+  g.manualXI = null;
+
+  g.phase = 'idle';
+  g.round = CUPR()[0] - 1;
+  const cupTeams = [g.clubId].concat(Object.keys(g.cs).filter(id => id !== g.clubId).slice(0, 15));
+  const cupTies = [];
+  for (let i = 0; i < 16; i += 2) cupTies.push([cupTeams[i], cupTeams[i + 1]]);
+  g.ucl = {stage:0,ties:cupTies,userIn:true,winner:null,winners:[],pendingTie:null};
+  const gamesBeforeDelegate = g.stats.games;
+  autoRound();
+  assertFeature(g.stats.games === gamesBeforeDelegate + 1 && g.phase !== 'cupmatch' && !g.ucl.pendingTie, 'delegated UCL transition');
   for (const lg in g.lgs) {
     for (const cid in g.lgs[lg].table) g.lgs[lg].table[cid].w = 10;
   }
@@ -84,8 +107,10 @@ function runFeatureChecks() {
   const target = Object.keys(g.cs).find(id =>
     id !== oldId && g.lgMembers[C[id].lg] && g.lgMembers[C[id].lg].includes(id)
   );
+  g.feed.push({type:'text',title:'OLD CLUB EVENT',body:'must be cleared'});
   switchClub(target);
   assertFeature(g.managedClubs[oldId], 'managed history marker');
+  assertFeature(!g.feed.some(card => card.title === 'OLD CLUB EVENT'), 'old-club feed cleared');
   for (const name of ['Mats Hummels', 'Robert Lewandowski']) {
     const owners = Object.keys(g.cs).filter(id => g.cs[id].sq.some(p => p.name === name));
     assertFeature(owners.length === 1 && owners[0] === oldId, name + ' duplicated');
@@ -99,7 +124,7 @@ function runFeatureChecks() {
 
   gameOver('sacked');
   assertFeature(jobOffers(0).length > 0, 'sacked re-employment');
-  console.log('FEATURE OK | historical rosters, potential, aging, Ballon dOr, history, dropped-club switch, re-employment');
+  console.log('FEATURE OK | historical rosters, detailed roles, manual XI, delegation, development, history');
 }
 `;
 
