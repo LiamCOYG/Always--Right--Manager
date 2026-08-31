@@ -68,6 +68,40 @@ function runFeatureChecks() {
 
   newGame('top');
   g.deal = false;
+  coachReport();
+  const transferReport = g.coachReport;
+  assertFeature(coachNeeds(transferReport).length === 2 && new Set(coachNeeds(transferReport).map(n => n.pos)).size === 2, 'two independent coach needs');
+  const legacyReport = {need:coachNeeds(transferReport)[0].pos,reason:'legacy',minAbi:70,targets:[],stats:transferReport.stats,baseIds:SQ().map(p => p.id)};
+  migrateCoachReport(legacyReport);
+  assertFeature(coachNeeds(legacyReport).length === 2, 'legacy coach report gains second need');
+  const recommended = coachNeeds(transferReport).flatMap(n => n.targets);
+  assertFeature(recommended.filter(t => t.age > 23).every(t => t.abi >= 80), 'elite club mature recommendation floor');
+  assertFeature(recommended.filter(t => t.age <= 23).every(t => t.abi >= 68 && t.pot >= 86), 'elite club prospect recommendation floor');
+  assertFeature(coachNeeds(transferReport).every(n => n.targets.every(t => t.abi >= n.minAbi || (t.age <= 23 && t.abi >= n.minAbi - 8 && t.pot >= n.minPot))), 'every recommendation can satisfy its need');
+  if (!transferReport.sells.length) transferReport.sells = [SQ()[SQ().length - 1]];
+  const firstNeed = coachNeeds(transferReport)[0], secondNeed = coachNeeds(transferReport)[1];
+  const needSigning = mkPlayer({name:'Coach Need Test',pos:firstNeed.pos,age:27,abi:Math.max(80,firstNeed.minAbi),pot:Math.max(80,firstNeed.minAbi)});
+  SQ().push(needSigning); registerSigning(needSigning);
+  assertFeature(firstNeed.fulfilled && !secondNeed.fulfilled, 'one signing completes only its matching need');
+  const reportAfterSigning = coachCard();
+  assertFeature(reportAfterSigning.includes('清洗建议') && reportAfterSigning.includes(POS_CN[secondNeed.pos]), 'remaining need and sales survive signing');
+
+  const savedMoney = g.money;
+  g.money = 0; g.phase = 'window'; g.marketType = 'winter'; g.mq = '';
+  if (g.market[0]) g.market[0].price = Math.max(1, g.market[0].price || 1);
+  assertFeature(marketListHtml().includes('data-src="market"'), 'listed-market petition entry');
+  if (!secondNeed.targets.length) secondNeed.targets.push({name:'Coach Petition Test',pos:secondNeed.pos,age:21,abi:72,pot:90,price:100});
+  secondNeed.targets[0].price = Math.max(1, secondNeed.targets[0].price);
+  assertFeature(coachCard().includes('data-src="coach"'), 'coach-target petition entry');
+  const opponent = Object.keys(g.cs).find(cid => cid !== g.clubId && g.cs[cid].sq.length);
+  g.mq = g.cs[opponent].sq[0].name;
+  assertFeature(marketListHtml().includes('data-src="search"'), 'search petition entry');
+  g.mq = '';
+  assertFeature(transferHtml().includes('冬窗作战摘要') && transferHtml().includes('当前弱点'), 'winter rank and weakness summary');
+  ui.modal = {type:'petition',target:{name:'Board Test',pos:firstNeed.pos,age:21,abi:82,pot:92,price:100}};
+  assertFeature(modalHtml().includes('petition-reason') && modalHtml().includes('预计'), 'petition reason modal');
+  g.money = savedMoney; g.marketType = 'summer'; ui.modal = null;
+
   assertFeature(preMatchBrief(1).includes('data-act="accept-brief"'), 'actionable pre-match brief');
   const selectable = SQ().filter(p => !p.inj && !p.ban).slice(0, 11);
   g.manualXI = selectable.map(p => p.id);
@@ -103,6 +137,13 @@ function runFeatureChecks() {
 
   render = function() {};
   save = function() {};
+  toast = function() {};
+  g.phase = 'window'; g.petitioned = false; g.money = 0;
+  ui.modal = {type:'petition',target:{name:'One Click Verdict',pos:'MF',age:20,abi:82,pot:92,price:100}};
+  const petitionRandom = Math.random; Math.random = () => 0;
+  act('petition-reason', {dataset:{reason:'future'}});
+  Math.random = petitionRandom;
+  assertFeature(g.petitioned && ui.modal === null && g.money > 0, 'petition reason immediately resolves once');
   const oldId = g.clubId;
   SQ().push(
     mkPlayer({name:'Mats Hummels',pos:'DF',age:25,abi:88,pot:90}),

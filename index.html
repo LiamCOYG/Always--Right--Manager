@@ -1577,10 +1577,14 @@ function autoToKey(){
 }
 function finishWindow(){
   if(g.phase!=='window')return;
-  if(g.coachReport&&g.coachReport.need&&!coachNeedMet(g.coachReport)){
-    const need=POS_CN[g.coachReport.need];
-    g.morale=clamp(g.morale-2,5,95);g.board=clamp(g.board-1,0,100);
-    pushFeed({type:'text',cls:'event',tag:'教练组',title:'转会窗关闭，需求未解决',body:'你关上了窗，但没有引进教练组反复要求的'+need+'。助教在走廊里摇了摇头，训练课的气氛变得微妙。（士气-2 董事会-1）'});
+  if(g.coachReport){
+    coachNeedMet(g.coachReport);
+    const unmet=coachNeeds(g.coachReport).filter(n=>!n.fulfilled);
+    if(unmet.length){
+      const moraleLoss=Math.min(4,unmet.length*2),boardLoss=Math.min(2,unmet.length);
+      g.morale=clamp(g.morale-moraleLoss,5,95);g.board=clamp(g.board-boardLoss,0,100);
+      pushFeed({type:'text',cls:'event',tag:'教练组',title:'转会窗关闭，仍有需求未解决',body:'教练组要求补强的'+unmet.map(n=>POS_CN[n.pos]).join('、')+'没有得到有效解决。助教在走廊里摇了摇头。（士气-'+moraleLoss+' 董事会-'+boardLoss+'）'});
+    }
   }
   g.phase='idle';g.coachReport=null;g.mq='';g.mpos='';g.searchCache=null;
 }
@@ -1654,18 +1658,27 @@ function resolveEvent(ci){
 }
 /* ---- 教练组报告 ---- */
 const POS_CN={GK:'门将',DF:'后卫',MF:'中场',FW:'前锋'};
+function coachNeeds(cr){
+  if(!cr)return [];
+  if(!cr.needs&&cr.need)cr.needs=[{pos:cr.need,reason:cr.reason,minAbi:cr.minAbi,targets:cr.targets||[],fulfilled:!!cr.fulfilled,fulfilledBy:cr.fulfilledBy}];
+  return cr.needs||[];
+}
 function coachNeedMet(cr){
-  if(!cr||!cr.need)return true;if(cr.fulfilled)return true;if(!cr.baseIds)return false;
+  const needs=coachNeeds(cr);if(!needs.length)return true;if(!cr.baseIds)return false;
   const old=new Set(cr.baseIds);
-  const p=SQ().find(q=>!old.has(q.id)&&q.pos===cr.need&&q.abi>=(cr.minAbi||55));
-  if(p){cr.fulfilled=true;cr.fulfilledBy=p.id;return true}return false;
+  for(const n of needs){
+    if(n.fulfilled)continue;
+    const p=SQ().find(q=>!old.has(q.id)&&q.pos===n.pos&&(q.abi>=(n.minAbi||60)||(q.age<=23&&q.abi>=(n.minAbi||60)-8&&q.pot>=(n.minPot||84))));
+    if(p){n.fulfilled=true;n.fulfilledBy=p.id}
+  }
+  return needs.every(n=>n.fulfilled);
 }
 function registerSigning(p){
   prepareSigning(p);
-  const cr=g&&g.coachReport;if(!cr||cr.fulfilled||p.pos!==cr.need||p.abi<(cr.minAbi||55))return;
-  if(cr.baseIds&&cr.baseIds.indexOf(p.id)>=0)return;
-  cr.fulfilled=true;cr.fulfilledBy=p.id;
-  pushFeed({type:'text',cls:'season',tag:'教练组',title:'引援需求已完成 ✅',body:cnOf(p.name)+'（能力'+p.abi+'）加盟，教练组确认'+POS_CN[p.pos]+'位置已得到有效补强。'});
+  const cr=g&&g.coachReport;if(!cr||(cr.baseIds&&cr.baseIds.indexOf(p.id)>=0))return;
+  const n=coachNeeds(cr).find(x=>!x.fulfilled&&p.pos===x.pos&&(p.abi>=(x.minAbi||60)||(p.age<=23&&p.abi>=(x.minAbi||60)-8&&p.pot>=(x.minPot||84))));
+  if(!n)return;n.fulfilled=true;n.fulfilledBy=p.id;
+  pushFeed({type:'text',cls:'season',tag:'教练组',title:POS_CN[p.pos]+'引援需求已完成 ✅',body:cnOf(p.name)+'（能力'+p.abi+'，潜力'+p.pot+'）加盟，教练组确认该位置已得到有效补强。其余补强和清洗建议仍可继续处理。'});
 }
 function prepareSigning(p){
   if(!p)return;applyHistoricalPedigree(p);if(p.devCeilingSet)return;p.prospect=p.age<=24;p.devCeilingSet=true;
@@ -1682,49 +1695,52 @@ function migratePlayerDevelopment(){
   }
 }
 function migrateCoachReport(cr){
-  if(!cr||cr.baseIds)return;const st=cr.stats&&cr.stats[cr.need];
-  cr.minAbi=Math.max(55,st&&st.bench||0,st&&st.first?st.first-8:0);
-  const announced=SQ().filter(p=>p.pos===cr.need&&(g.feed||[]).some(c=>c.tag==='官宣'&&c.title&&c.title.indexOf(cnOf(p.name))>=0));
-  cr.baseIds=SQ().filter(p=>announced.indexOf(p)<0).map(p=>p.id);cr.fulfilled=false;
+  if(!cr)return;const legacy=!cr.needs&&!!cr.need,needs=coachNeeds(cr);
+  if(legacy&&needs.length===1){
+    const analysis=squadAnalysis(),item=analysis.ranked.find(x=>x.pos!==needs[0].pos),rep=clubRep(C[g.clubId],g.year);
+    if(item){const st=analysis.stats[item.pos],reason=st.bench<st.first-8?POS_CN[item.pos]+'替补席与主力差距明显（'+st.bench+' vs '+st.first+'）':(st.injN>0?POS_CN[item.pos]+'位置有'+st.injN+'名伤员':POS_CN[item.pos]+'阵容深度不足'),floor=rep>=5?78:rep===4?74:rep===3?70:rep===2?64:58;
+      needs.push({pos:item.pos,reason:reason,minAbi:Math.max(floor,st.bench||0,st.first?st.first-5:0),minPot:rep>=5?86:rep===4?84:rep===3?82:78,targets:coachTargets(item.pos,st,new Set((needs[0].targets||[]).map(t=>t.name.toLowerCase()))),fulfilled:false});}
+  }
+  for(const n of needs){const st=cr.stats&&cr.stats[n.pos];n.minAbi=n.minAbi||Math.max(55,st&&st.bench||0,st&&st.first?st.first-8:0);n.minPot=n.minPot||84;n.targets=n.targets||[]}
+  if(!cr.baseIds){
+    const positions=new Set(needs.map(n=>n.pos));
+    const announced=SQ().filter(p=>positions.has(p.pos)&&(g.feed||[]).some(c=>c.tag==='官宣'&&c.title&&c.title.indexOf(cnOf(p.name))>=0));
+    cr.baseIds=SQ().filter(p=>announced.indexOf(p)<0).map(p=>p.id);
+  }
   coachNeedMet(cr);
+}
+function squadAnalysis(){
+  const sq=SQ(),needN={GK:2,DF:5,MF:5,FW:3},stats={},ranked=[];
+  for(const pos of['GK','DF','MF','FW']){
+    const ps=sq.filter(p=>p.pos===pos&&!p.inj&&!p.ban).sort((a,b)=>b.abi-a.abi),starters=ps.slice(0,needN[pos]),bench=ps.slice(needN[pos],needN[pos]+2);
+    stats[pos]={first:starters.length?Math.round(starters.reduce((s,p)=>s+p.abi*p.form,0)/starters.length):0,bench:bench.length?Math.round(bench.reduce((s,p)=>s+p.abi*p.form,0)/bench.length):0,n:ps.length,injN:sq.filter(p=>p.pos===pos&&p.inj).length};
+    const st=stats[pos];ranked.push({pos:pos,score:st.first*0.7+st.bench*0.3-(st.n<needN[pos]+1?8:0)-st.injN*4});
+  }
+  ranked.sort((a,b)=>a.score-b.score);return {stats:stats,ranked:ranked};
+}
+function coachTargetAllowed(t,rep,st){
+  const young=t.age<=23,adultFloor=rep>=5?Math.max(80,(st.first||80)-4):rep===4?Math.max(76,(st.first||76)-6):rep===3?Math.max(72,(st.first||72)-8):rep===2?66:60;
+  const needFloor=Math.max(rep>=5?78:rep===4?74:rep===3?70:rep===2?64:58,st.bench||0,st.first?st.first-5:0);
+  const youthFloor=Math.max(rep>=5?68:rep===4?66:rep===3?63:58,needFloor-8),potFloor=rep>=5?86:rep===4?84:rep===3?82:78;
+  return young?(t.abi>=youthFloor&&t.pot>=potFloor):t.abi>=adultFloor;
+}
+function coachTargets(pos,st,used){
+  const rep=clubRep(C[g.clubId],g.year),budget=g.money,all=[];
+  for(const e of MARKET_POOL[g.year]||[]){if(e[1]!==pos)continue;all.push({name:e[0],pos:e[1],age:e[2],abi:e[3],pot:e[4],flag:e[6],price:Math.max(1,Math.round(e[5]*1.25/10000))})}
+  for(const cid in g.cs){if(cid===g.clubId)continue;for(const p of g.cs[cid].sq){if(p.pos!==pos||p.age>34)continue;all.push({name:p.name,pos:p.pos,role:p.role||roleOf(p),age:p.age,abi:p.abi,pot:p.pot,flag:FLAGS[p.nat]||'🏳️',price:Math.max(1,Math.round(playerValue(p,g.year)*1.35)),from:cid})}}
+  const filtered=all.filter(t=>!used.has(t.name.toLowerCase())&&coachTargetAllowed(t,rep,st));
+  filtered.sort((a,b)=>(a.price<=budget?0:1)-(b.price<=budget?0:1)||((b.age<=23?b.pot:b.abi)-(a.age<=23?a.pot:a.abi))||b.abi-a.abi||a.price-b.price);
+  const out=[];for(const t of filtered){if(used.has(t.name.toLowerCase()))continue;out.push(t);used.add(t.name.toLowerCase());if(out.length>=3)break}return out;
 }
 function coachReport(){
   const sq=SQ();
   if(!sq.length)return;
-  const needN={GK:2,DF:5,MF:5,FW:3};
-  const stats={};
-  for(const pos of['GK','DF','MF','FW']){
-    const ps=sq.filter(p=>p.pos===pos&&!p.inj&&!p.ban).sort((a,b)=>b.abi-a.abi);
-    const starters=ps.slice(0,needN[pos]);
-    const bench=ps.slice(needN[pos],needN[pos]+2);
-    stats[pos]={
-      first:starters.length?Math.round(starters.reduce((s,p)=>s+p.abi*p.form,0)/starters.length):0,
-      bench:bench.length?Math.round(bench.reduce((s,p)=>s+p.abi*p.form,0)/bench.length):0,
-      n:ps.length,injN:sq.filter(p=>p.pos===pos&&p.inj).length};
-  }
-  let need=null;let worst=999;
-  for(const pos of['DF','MF','FW','GK']){
-    const st=stats[pos];
-    const score=st.first*0.7+st.bench*0.3-(st.n<needN[pos]+1?8:0)-st.injN*4;
-    if(score<worst){worst=score;need=pos}
-  }
-  const pool=MARKET_POOL[g.year]||[];
-  const cands=pool.filter(e=>e[1]===need).sort((a,b)=>b[3]-a[3]);
-  const targets=[];
-  const budget=g.money;
-  for(const e of cands){
-    const price=Math.max(1,Math.round(e[5]*1.25/10000));
-    if(price<=budget*0.6||targets.length<1)targets.push({name:e[0],pos:e[1],age:e[2],abi:e[3],pot:e[4],flag:e[6],price:price});
-    if(targets.length>=3)break;
-  }
-  if(targets.length<3){
-    const seen=new Set(targets.map(t=>t.name.toLowerCase()));const fallback=[];
-    for(const cid in g.cs){if(cid===g.clubId)continue;for(const p of g.cs[cid].sq){
-      if(p.pos!==need||p.age>34||seen.has(p.name.toLowerCase()))continue;
-      fallback.push({name:p.name,pos:p.pos,role:p.role||roleOf(p),age:p.age,abi:p.abi,pot:p.pot,flag:FLAGS[p.nat]||'🏳️',price:Math.max(1,Math.round(playerValue(p,g.year)*1.35)),from:cid});
-    }}
-    fallback.sort((a,b)=>(a.price<=budget?0:1)-(b.price<=budget?0:1)||b.abi-a.abi||a.price-b.price);
-    for(const t of fallback){if(seen.has(t.name.toLowerCase()))continue;targets.push(t);seen.add(t.name.toLowerCase());if(targets.length>=3)break}
+  const analysis=squadAnalysis(),stats=analysis.stats,rep=clubRep(C[g.clubId],g.year),used=new Set(),needs=[];
+  for(const item of analysis.ranked.slice(0,2)){
+    const pos=item.pos,st=stats[pos];
+    const reason=st.bench<st.first-8?POS_CN[pos]+'替补席与主力差距明显（'+st.bench+' vs '+st.first+'）':(st.injN>0?POS_CN[pos]+'位置有'+st.injN+'名伤员':POS_CN[pos]+'阵容深度不足');
+    const floor=rep>=5?78:rep===4?74:rep===3?70:rep===2?64:58;
+    needs.push({pos:pos,reason:reason,minAbi:Math.max(floor,st.bench||0,st.first?st.first-5:0),minPot:rep>=5?86:rep===4?84:rep===3?82:78,targets:coachTargets(pos,st,used),fulfilled:false});
   }
   const surplus={GK:3,DF:8,MF:8,FW:6};
   const sells=[];
@@ -1738,17 +1754,14 @@ function coachReport(){
     if(p.age>=32&&p.abi<78&&sells.length<2&&!sells.some(q=>q.id===p.id))sells.push(p);
     if(sells.length>=2)break;
   }
-  const reason=stats[need].bench<stats[need].first-8?POS_CN[need]+'替补席与主力差距明显（'+stats[need].bench+' vs '+stats[need].first+'）':
-    (stats[need].injN>0?POS_CN[need]+'位置伤号较多':''+POS_CN[need]+'深度不足');
-  const minAbi=Math.max(55,stats[need].bench||0,stats[need].first-8);
-  g.coachReport={need:need,targets:targets,sells:sells.slice(0,2),reason:reason,stats:stats,minAbi:minAbi,baseIds:sq.map(p=>p.id),fulfilled:false};
+  g.coachReport={needs:needs,sells:sells.slice(0,2),stats:stats,baseIds:sq.map(p=>p.id)};
 }
 /* ---- 转会市场 ---- */
 function openMarket(type){
   g.petitioned=false;
   const y=g.year;const mkt=[];
   if(!g.deal){coachReport();
-    if(g.coachReport)pushFeed({type:'text',cls:'event',tag:'教练组',title:'引援需求报告',body:'教练组分析了阵容：'+g.coachReport.reason+'。建议引进'+POS_CN[g.coachReport.need]+'。详情见「💶转会」页。'});}
+    if(g.coachReport)pushFeed({type:'text',cls:'event',tag:'教练组',title:'引援与清洗报告',body:'教练组列出了两项补强任务：'+coachNeeds(g.coachReport).map(n=>POS_CN[n.pos]).join('、')+'。推荐目标和清洗名单都可在「💶转会」页分别处理。'});}
 
   const others=shuffle(Object.keys(g.cs).filter(id=>id!==g.clubId)).map(id=>C[id]);
   for(const c of others.slice(0,20)){
@@ -2028,7 +2041,7 @@ let lastFeedLen=0;
 const SAVE_KEY='lvyr3';
 function save(){try{if(g&&!g.deal)localStorage.setItem(SAVE_KEY,JSON.stringify(g))}catch(e){}}
 function peekSave(){try{const s=localStorage.getItem(SAVE_KEY);if(!s)return null;const d=JSON.parse(s);return d&&d.v===2?d:null}catch(e){return null}}
-function load(){const d=peekSave();if(d){g=d;relink();if(!g.managedClubs)g.managedClubs={};if(!g.ballons)g.ballons=[];enforceManagedHistory();migratePlayerDevelopment();migrateUCL();if(g.coachReport&&!g.coachReport.baseIds)migrateCoachReport(g.coachReport)}return d}
+function load(){const d=peekSave();if(d){g=d;relink();if(!g.managedClubs)g.managedClubs={};if(!g.ballons)g.ballons=[];enforceManagedHistory();migratePlayerDevelopment();migrateUCL();if(g.coachReport)migrateCoachReport(g.coachReport)}return d}
 function clearSave(){try{localStorage.removeItem(SAVE_KEY)}catch(e){}}
 function chipCls(v){return v>=60?'good':v>=35?'warn':'bad'}
 function MORALE_DESC(m){return m>=80?'火热':m>=60?'良好':m>=40?'低落':m>=20?'危机':'崩溃'}
@@ -2253,17 +2266,21 @@ function leagueHtml(){
 }
 function coachCard(){
   const cr=g.coachReport;if(!cr)return '';
-  if(coachNeedMet(cr)){const p=SQ().find(q=>q.id===cr.fulfilledBy);return '<div class="card season"><span class="tag">📋 教练组引援报告</span><h3>需求已完成 ✅</h3><p>'+(p?esc(cnOf(p.name))+'（'+ROLE_CN[roleOf(p)]+'，能力'+p.abi+'）':'新援')+'已经有效补强'+POS_CN[cr.need]+'位置，关窗时不会再被判定为未完成。</p></div>'}
-  let h='<div class="card event"><span class="tag">📋 教练组引援报告</span><p>阵容分析：'+esc(cr.reason)+'。建议引进<b>'+POS_CN[cr.need]+'</b>。</p>';
-  if(cr.targets.length){
-    h+='<div class="section-title" style="margin-top:8px">推荐目标</div>';
-    for(const t of cr.targets){
-      const afford=t.price<=g.money&&SQ().length<26;
-      h+='<div class="mcard"><span class="pos role '+t.pos+'">'+ROLE_CN[roleOf(t)]+'</span><div class="pname"><b>'+(t.flag||'')+' '+playerLabel(t.name)+'</b><span>能力 <b>'+t.abi+'</b> · '+t.age+'岁 · 潜力'+t.pot+'</span><span class="profile">'+profileText(t)+'</span></div><div class="pstat"><span class="price">'+fmtM(t.price)+'</span><br/></div><button class="sbtn buy" data-act="coach-buy" data-n="'+esc(t.name)+'" '+(afford?'':'disabled')+'>'+(afford?'签下':t.price>g.money?'没钱':'满员')+'</button></div>';
-    }
-  }else h+='<p class="muted">（当前市场暂无合适目标）</p>';
+  coachNeedMet(cr);const needs=coachNeeds(cr);
+  let h='<div class="card event"><span class="tag">📋 教练组引援与清洗报告</span><p class="muted">补强任务可分别完成；签下一人后，其余任务和清洗建议不会消失。</p>';
+  needs.forEach(function(n,ni){
+    const signed=n.fulfilled&&SQ().find(q=>q.id===n.fulfilledBy);
+    h+='<div class="section-title" style="margin-top:10px">'+(n.fulfilled?'✅ ':'🎯 ')+POS_CN[n.pos]+' · '+esc(n.reason)+'</div>';
+    if(n.fulfilled){h+='<p>'+(signed?esc(cnOf(signed.name))+'（能力'+signed.abi+'）':'新援')+'已完成这项补强。</p>';return}
+    h+='<p class="muted">验收标准：能力至少 '+n.minAbi+'；或23岁以下、能力至少 '+(n.minAbi-8)+' 且潜力 '+n.minPot+'+。</p>';
+    if(n.targets&&n.targets.length)n.targets.forEach(function(t,ti){
+      const afford=t.price<=g.money&&SQ().length<26,canPet=t.price>g.money&&g.phase==='window'&&!g.petitioned&&SQ().length<26;
+      const btn=canPet?'<button class="sbtn" data-act="petition" data-src="coach" data-ni="'+ni+'" data-ti="'+ti+'" style="border-color:var(--gold);color:var(--gold)">申请专款</button>':'<button class="sbtn buy" data-act="coach-buy" data-ni="'+ni+'" data-ti="'+ti+'" '+(afford?'':'disabled')+'>'+(afford?'签下':t.price>g.money?'没钱':'满员')+'</button>';
+      h+='<div class="mcard"><span class="pos role '+t.pos+'">'+ROLE_CN[roleOf(t)]+'</span><div class="pname"><b>'+(t.flag||'')+' '+playerLabel(t.name)+'</b><span>能力 <b>'+t.abi+'</b> · '+t.age+'岁 · 潜力'+t.pot+'</span><span class="profile">'+profileText(t)+'</span></div><div class="pstat"><span class="price">'+fmtM(t.price)+'</span><br/></div>'+btn+'</div>';
+    });else h+='<p class="muted">（按本队档次筛选后，当前市场暂无合格目标；可使用下方搜索。）</p>';
+  });
   if(cr.sells&&cr.sells.length){
-    h+='<div class="section-title" style="margin-top:8px">清洗建议</div>';
+    h+='<div class="section-title" style="margin-top:12px">🧹 清洗建议（独立处理）</div>';
     for(const pl of cr.sells){
       h+='<div class="mcard"><span class="pos '+pl.pos+'">'+pl.pos+'</span><div class="pname"><b>'+esc(cnOf(pl.name))+' <span style="color:#768390;font-size:11px">'+esc(pl.name)+'</span></b><span>'+pl.age+'岁 · 能力'+pl.abi+(pl.form<0.95?' · 状态下滑':'')+'</span></div><div class="pstat">'+fmtM(playerValue(pl,g.year))+'<br/></div><button class="sbtn sell" data-act="coach-sell" data-id="'+pl.id+'">出售</button></div>';
     }
@@ -2308,6 +2325,21 @@ function searchAll(q){
   }
   return deduped.slice(0,30);
 }
+function petitionTarget(el){
+  const src=el.dataset.src||'search';
+  if(src==='market'){const m=g.market&&g.market[+el.dataset.i];if(!m)return null;return Object.assign({},m,{price:(m.price||0)+(m.type==='free'?(m.fee||0):0)})}
+  if(src==='coach'){const n=coachNeeds(g.coachReport)[+el.dataset.ni];return n&&n.targets&&n.targets[+el.dataset.ti]||null}
+  return g.searchCache&&g.searchCache[+el.dataset.i]||null;
+}
+function petitionChance(t,reason){
+  let chance=0.22+g.board/250+((g.chair.bud||1)-1),why='董事会信任与主席风格';
+  const analysis=squadAnalysis(),weak=analysis.ranked.slice(0,2).map(x=>x.pos);
+  if(reason==='title'){const good=t.abi>=Math.max(80,analysis.stats[t.pos].first||0);chance+=good?0.18:-0.08;why+=good?'，即战力足以改变争冠格局':'，即战力说服力有限'}
+  if(reason==='future'){const good=t.age<=23&&t.pot>=86;chance+=good?0.20:-0.12;why+=good?'，符合年轻核心投资':'，年龄或潜力不符合长期投资'}
+  if(reason==='star'){const good=t.lg||t.abi>=88;chance+=good?0.16:-0.10;why+=good?'，具备巨星号召力':'，商业号召力有限'}
+  if(reason==='weak'){const st=analysis.stats[t.pos],good=weak.includes(t.pos)||(st&&st.injN>0);chance+=good?0.18:-0.08;why+=good?'，正对阵容弱点或伤病':'，并非当前紧缺位置'}
+  return {chance:clamp(chance,0.08,0.92),why:why};
+}
 function marketListHtml(){
   const open=g.phase==='window';
   const q=(g.mq||'').trim().toLowerCase();const mp=g.mpos||'';
@@ -2320,7 +2352,7 @@ function marketListHtml(){
       const can=open&&m.price<=g.money&&SQ().length<26;
       const fromTxt=(m.type==='scout')?'自由市场':(C[m.from]?C[m.from].name+(g.cs[m.from]?' · 非卖品':' · 次级联赛'):'');
       const needPet=!open?false:(m.price>g.money&&SQ().length<26&&!g.petitioned);
-      const btn=needPet?'<button class="sbtn" data-act="petition" data-i="'+idx+'" style="border-color:var(--gold);color:var(--gold)">申请专款</button>':'<button class="sbtn buy" data-act="sbuy" data-i="'+idx+'" '+(can?'':'disabled')+'>'+(!open?'窗口关闭':m.price>g.money?'没钱':SQ().length>=26?'满员':'求购')+'</button>';
+      const btn=needPet?'<button class="sbtn" data-act="petition" data-src="search" data-i="'+idx+'" style="border-color:var(--gold);color:var(--gold)">申请专款</button>':'<button class="sbtn buy" data-act="sbuy" data-i="'+idx+'" '+(can?'':'disabled')+'>'+(!open?'窗口关闭':m.price>g.money?'没钱':SQ().length>=26?'满员':'求购')+'</button>';
       sh+='<div class="mcard"><span class="pos role '+m.pos+'">'+ROLE_CN[roleOf(m)]+'</span><div class="pname"><b>'+(m.flag||'')+' '+esc(cnOf(m.name))+'</b><span>'+(cnOf(m.name)!==m.name?esc(m.name)+' · ':'')+m.age+'岁 · '+esc(fromTxt)+'</span><span style="display:block;margin-top:2px"><span class="price" style="font-size:14px">'+fmtM(m.price)+'</span> · 能力 <b style="color:var(--text)">'+m.abi+'</b>'+(m.pot>m.abi+3?' · 潜力'+m.pot:'')+'</span><span class="profile">'+profileText(m)+'</span></div>'+btn+'</div>';
     });
     return sh;
@@ -2339,13 +2371,21 @@ function marketListHtml(){
     const cost=(m.price||0)+(m.type==='free'?(m.fee||0):0);
     const can=open&&cost<=g.money&&SQ().length<26;
     const fromTxt=m.type==='club'?(C[m.from].name+' · '+LG[C[m.from].lg]):(m.type==='free'?'自由身':(m.type==='scout'?'球探推荐':'超新星'));
-    h+='<div class="mcard"><span class="pos role '+m.pos+'">'+ROLE_CN[roleOf(m)]+'</span><div class="pname"><b>'+(m.lg?'⭐':'')+playerLabel(m.name)+'</b><span>'+fromTxt+' · '+(m.flag||FLAGS[m.nat]||'🏳️')+' '+m.age+'岁 · <span class="stars">'+stars(m.abi)+'</span>'+(m.type==='gem'?' <span class="hl">潜力'+m.pot+'</span>':'')+'</span><span class="profile">'+profileText(m)+'</span></div><div class="pstat">'+(m.type==='free'?'<span class="free-tag">免签</span><br/>签字费 '+fmtM(m.fee):'<span class="price">'+fmtM(m.price)+'</span>')+'<br/>能力 <b>'+m.abi+'</b></div><button class="sbtn buy" data-act="buy" data-i="'+i+'" '+(can?'':'disabled')+'>'+(!open?'关闭':cost>g.money?'没钱':SQ().length>=26?'满员':'签下')+'</button></div>';
+    const canPet=open&&cost>g.money&&SQ().length<26&&!g.petitioned;
+    const btn=canPet?'<button class="sbtn" data-act="petition" data-src="market" data-i="'+i+'" style="border-color:var(--gold);color:var(--gold)">申请专款</button>':'<button class="sbtn buy" data-act="buy" data-i="'+i+'" '+(can?'':'disabled')+'>'+(!open?'关闭':cost>g.money?'没钱':SQ().length>=26?'满员':'签下')+'</button>';
+    h+='<div class="mcard"><span class="pos role '+m.pos+'">'+ROLE_CN[roleOf(m)]+'</span><div class="pname"><b>'+(m.lg?'⭐':'')+playerLabel(m.name)+'</b><span>'+fromTxt+' · '+(m.flag||FLAGS[m.nat]||'🏳️')+' '+m.age+'岁 · <span class="stars">'+stars(m.abi)+'</span>'+(m.type==='gem'?' <span class="hl">潜力'+m.pot+'</span>':'')+'</span><span class="profile">'+profileText(m)+'</span></div><div class="pstat">'+(m.type==='free'?'<span class="free-tag">免签</span><br/>签字费 '+fmtM(m.fee):'<span class="price">'+fmtM(m.price)+'</span>')+'<br/>能力 <b>'+m.abi+'</b></div>'+btn+'</div>';
   }
   return h;
 }
 function transferHtml(){
   const open=g.phase==='window';
-  let h=coachCard();
+  let h='';
+  if(g.marketType==='winter'){
+    const row=g.table[g.clubId],rank=g.round?tableRank(g.clubId):'—',analysis=squadAnalysis(),weak=analysis.ranked.slice(0,2).map(x=>POS_CN[x.pos]+'（主力'+analysis.stats[x.pos].first+'/替补'+analysis.stats[x.pos].bench+'）'),form=row&&row.form&&row.form.length?row.form.slice(-5).map(x=>x==='W'?'🟢':x==='D'?'⚪':'🔴').join(''):'暂无比赛';
+    const injuries=SQ().filter(p=>p.inj).length,done=coachNeeds(g.coachReport).filter(n=>n.fulfilled).length,total=coachNeeds(g.coachReport).length;
+    h+='<div class="card season"><span class="tag">❄️ 冬窗作战摘要</span><div class="kpi"><div class="cell"><div class="v">第'+rank+'</div><div class="l">当前排名</div></div><div class="cell"><div class="v">'+(row?row.pts:0)+'</div><div class="l">积分</div></div><div class="cell"><div class="v">'+injuries+'</div><div class="l">伤员</div></div><div class="cell"><div class="v">'+done+'/'+total+'</div><div class="l">补强完成</div></div></div><p><b>近况：</b>'+form+'</p><p><b>当前弱点：</b>'+weak.join('、')+'</p></div>';
+  }
+  h+=coachCard();
   h+='<div class="card"><span class="tag">'+(open?(g.marketType==='summer'?'夏季转会窗':'冬季转会窗'):'转会窗已关闭')+'</span><p>预算：<b class="price">'+fmtM(g.money)+'</b> · 阵容 '+SQ().length+'/26</p><p class="muted">'+(open?'本联赛在售球员+球探推荐随机上架。':'下一个转会窗：第9轮后（冬窗）/ 赛季结束后（夏窗）')+'</p></div>';
   if(open)h+='<button class="btn primary big" data-act="window-done" style="margin-bottom:12px">完成'+(g.marketType==='summer'?'夏':'冬')+'窗 ⚽</button>';
   h+='<div class="card"><input id="mq" placeholder="🔍 搜索球员名…" value="'+esc(g.mq||'')+'" style="width:100%;background:var(--card2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;font-family:inherit;outline:none"/><div class="tactic-row" style="margin-top:8px"><button class="seg'+(g.mpos===''?' on':'')+'" data-act="mpos" data-v="">全部</button>';
@@ -2386,6 +2426,12 @@ function modalHtml(){
       '<p style="margin-top:10px"><b>比赛影响</b></p><p class="muted">联赛胜利通常提升董事会、球迷与士气；失利则全部下降；平局会根据双方实力改变评价，并让士气向62回稳。⭐关键战胜负有额外±2影响；三连胜/五连胜会获得奖励，三连败/五连败会触发危机。欧冠及决赛另有更高奖金与评价。</p>'+
       '<div class="row"><button class="btn primary" data-act="modal-close">知道了</button></div></div></div>';
   }
+  if(m.type==='petition'){
+    const t=m.target,reasons=[['title','争冠最后拼图','强调即战力和本赛季成绩'],['future','未来核心投资','强调年龄、潜力和长期价值'],['star','商业与球迷价值','强调巨星效应和市场号召力'],['weak','阵容短板告急','强调薄弱位置和伤病压力']];
+    let h='<div class="modal-mask"><div class="modal"><h3>向董事会申请专项经费</h3><p><b>'+esc(cnOf(t.name))+'</b> · '+t.age+'岁 · 能力'+t.abi+' · 潜力'+t.pot+'</p><p>需要补足：<b class="price">'+fmtM(Math.max(0,Math.round(t.price*1.05-g.money)))+'</b></p><p class="muted">选择一个申请理由后，董事会会立即作出本窗唯一一次裁决。</p><div class="stack">';
+    for(const r of reasons){const pc=Math.round(petitionChance(t,r[0]).chance*100);h+='<button class="btn ghost big" data-act="petition-reason" data-reason="'+r[0]+'">'+r[1]+' · 预计 '+pc+'%<small>'+r[2]+'</small></button>'}
+    return h+'</div><button class="btn ghost" data-act="modal-close" style="margin-top:10px;width:100%">取消</button></div></div>';
+  }
   if(m.type==='sell')return '<div class="modal-mask"><div class="modal"><h3>出售 '+esc(m.name)+'？</h3><p>对方报价：<b class="price">'+fmtM(m.offer)+'</b></p><p class="muted">成交后资金立即到账。</p><div class="row"><button class="btn ghost" data-act="modal-close">再想想</button><button class="btn primary" data-act="sell-ok" data-id="'+m.pid+'">成交</button></div></div></div>';
   if(m.type==='restart')return '<div class="modal-mask"><div class="modal"><h3>删档重开？</h3><p class="muted">当前执教生涯将被删除，无法恢复。</p><div class="row"><button class="btn ghost" data-act="modal-close">取消</button><button class="btn danger" data-act="restart-ok">删档重开</button></div></div></div>';
   if(m.type==='menu')return '<div class="modal-mask"><div class="modal"><h3>菜单</h3><div class="stack"><button class="btn ghost big" data-act="menu-home">🏠 回主菜单（保留存档）</button><button class="btn danger big" data-act="restart">🗑️ 删档重开</button><button class="btn ghost big" data-act="modal-close">返回比赛</button></div></div></div>';
@@ -2393,7 +2439,7 @@ function modalHtml(){
 }
 function startHtml(){
   const sv=g||peekSave();
-  let h='<div class="hero"><div class="logo">⚽</div><h1>绿茵人生</h1><p class="sub">足球经理文字模拟器 · 6大联赛 · 欧冠 · 无广告本地运行</p><p style="text-align:center;margin:-18px 0 22px"><span class="achip">v2.15 · 欧冠小组赛 · 手动首发 · 历史名单</span></p>';
+  let h='<div class="hero"><div class="logo">⚽</div><h1>绿茵人生</h1><p class="sub">足球经理文字模拟器 · 6大联赛 · 欧冠 · 无广告本地运行</p><p style="text-align:center;margin:-18px 0 22px"><span class="achip">v2.16 · 多项引援任务 · 冬窗摘要 · 专款理由</span></p>';
   if(sv)h+='<button class="btn primary big mode" data-act="continue">继续执教 '+esc(C[sv.clubId].name)+'（'+LG[C[sv.clubId].lg]+' '+fmtS(sv.year)+'）</button>';
   h+='<button class="btn primary big mode" data-act="mode" data-m="rand">🎲 完全随机<small>年代与球队全部随机，刺激拉满</small></button>';
   h+='<button class="btn ghost big mode" data-act="mode" data-m="top">👑 豪门开局<small>皇马拜仁曼联……预算充裕，但必须夺冠</small></button>';
@@ -2446,9 +2492,9 @@ function act(a,el){
     pushFeed({type:'text',cls:'event',tag:'主席',title:g.chair.name+' · '+g.chair.type,body:g.chair.desc+'。他递给你一份名单："目标，别给我忘了。"'});
     pushFeed({type:'text',cls:'season',tag:'夏窗',title:'夏季转会窗开启',body:'引援预算 '+fmtM(g.money)+'，去「💶转会」页看看吧。'});
     coachReport();
-    if(g.coachReport)pushFeed({type:'text',cls:'event',tag:'教练组',title:'引援需求报告',body:'教练组分析了阵容：'+g.coachReport.reason+'。建议引进'+POS_CN[g.coachReport.need]+'，详见「💶转会」页。'});
+    if(g.coachReport)pushFeed({type:'text',cls:'event',tag:'教练组',title:'引援与清洗报告',body:'教练组列出了两项补强任务：'+coachNeeds(g.coachReport).map(n=>POS_CN[n.pos]).join('、')+'。推荐目标和清洗建议都可在「💶转会」页分别处理。'});
     save();render()}
-  else if(a==='continue'){if(!g){const sv=peekSave();if(sv){g=sv;relink()}}render()}
+  else if(a==='continue'){if(!g)load();render()}
   else if(a==='tab'){g.tab=el.dataset.t;render()}
   else if(a==='viewlg'){g.viewLg=el.dataset.v;render()}
   else if(a==='menu'){ui.modal={type:'menu'};render()}
@@ -2479,22 +2525,20 @@ function act(a,el){
   else if(a==='window-done'){finishWindow();save();render()}
   else if(a==='buy'){const ok=buyPlayer(+el.dataset.i);toast(ok?'官宣完成 ✅':'交易未成');save();render()}
   else if(a==='petition'){
-    const m=g.searchCache&&g.searchCache[+el.dataset.i];
-    if(m&&!g.petitioned&&g.phase==='window'){
-      g.petitioned=true;
-      const chance=0.25+g.board/250+((g.chair.bud||1)-1);
-      if(Math.random()<chance){
-        const grant=Math.max(50,Math.round(m.price*1.05-g.money));
-        M(grant);
-        pushFeed({type:'text',cls:'season',tag:'专款',title:'主席批准了专款！',body:'你拿着方案敲开主席办公室，'+g.chair.name+'看完拍板："签下他！"'+fmtM(grant)+'专项预算已到账。'});
-        toast('专款到账');
-      }else{
-        g.board=clamp(g.board-1,0,100);
-        pushFeed({type:'text',cls:'event',tag:'专款',title:'专款被驳回',body:g.chair.name+'揉了揉太阳穴："每一分钱都要精打细算。"（本窗不能再申请）'});
-        toast('主席驳回');
-      }
+    const m=petitionTarget(el);
+    if(m&&!g.petitioned&&g.phase==='window'&&m.price>g.money){ui.modal={type:'petition',target:Object.assign({},m)};render()}
+  }
+  else if(a==='petition-reason'){
+    const m=ui.modal&&ui.modal.type==='petition'&&ui.modal.target;if(!m||g.petitioned||g.phase!=='window')return;
+    const verdict=petitionChance(m,el.dataset.reason);g.petitioned=true;ui.modal=null;
+    if(Math.random()<verdict.chance){
+      const grant=Math.max(1,Math.round(m.price*1.05-g.money));M(grant);
+      pushFeed({type:'text',cls:'season',tag:'专款',title:'主席批准了专款！',body:'你以“'+({title:'争冠最后拼图',future:'未来核心投资',star:'商业与球迷价值',weak:'阵容短板告急'}[el.dataset.reason])+'”说服董事会。'+verdict.why+'，'+fmtM(grant)+'专项预算已到账。'});toast('专款到账');
+    }else{
+      g.board=clamp(g.board-1,0,100);pushFeed({type:'text',cls:'event',tag:'专款',title:'专款被驳回',body:verdict.why+'，董事会最终没有点头。（董事会-1，本窗不能再申请）'});toast('主席驳回');
     }
-    save();render()}
+    save();render();
+  }
   else if(a==='sbuy'){
     const m=g.searchCache&&g.searchCache[+el.dataset.i];
     if(m&&g.phase==='window'&&m.price<=g.money&&SQ().length<26){
@@ -2513,12 +2557,12 @@ function act(a,el){
     }else toast('交易未成');
   }
   else if(a==='coach-buy'){
-    const cr=g.coachReport;const t=cr&&cr.targets.find(x=>x.name===el.dataset.n);
+    const cr=g.coachReport,n=coachNeeds(cr)[+el.dataset.ni],t=n&&n.targets&&n.targets[+el.dataset.ti];
     if(t&&t.price<=g.money&&SQ().length<26){
       M(-t.price);
       if(t.from&&g.cs[t.from]){const src=g.cs[t.from].sq;const i=src.findIndex(p=>p.name===t.name&&p.age===t.age);if(i>=0)src.splice(i,1)}
       const np=mkPlayer({name:t.name,nat:'EUR',pos:t.pos,role:t.role,age:t.age,abi:t.abi,pot:t.pot,lg:false});
-      SQ().push(np);cr.targets=cr.targets.filter(x=>x.name!==t.name);
+      SQ().push(np);n.targets=n.targets.filter(x=>x.name!==t.name);
       if(!g.boughtFrom)g.boughtFrom={};
       g.boughtFrom[t.name]=g.year;
       pushFeed({type:'text',cls:'season',tag:'官宣',title:cnOf(t.name)+' 加盟',body:'按教练组推荐完成签约，转会费 '+fmtM(t.price)+'。助教们击掌相庆。'});
