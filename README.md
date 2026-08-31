@@ -2,9 +2,11 @@
 
 单文件、零依赖的足球经理文字模拟器。
 
+[![🎮 在线游玩](https://img.shields.io/badge/🎮_在线游玩-打开绿茵人生-2ea043?style=for-the-badge)](https://htmlpreview.github.io/?https://github.com/LiamCOYG/Always--Right--Manager/blob/main/index.html)
+
 ## 运行
 
-直接用浏览器打开 `index.html`。
+点击上方按钮即可在浏览器运行最新版；也可以下载仓库后直接打开 `index.html`。
 
 ## 测试
 
