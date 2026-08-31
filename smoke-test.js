@@ -1,6 +1,7 @@
 const fs = require('fs');
 
 const html = fs.readFileSync('index.html', 'utf8');
+const rosterArchive = fs.readFileSync('HISTORICAL_ROSTER_ARCHIVE.md', 'utf8');
 let source = html.match(/<script>([\s\S]*)<\/script>/)[1];
 source = source.replace(
   "if(typeof window==='undefined'){runSmoke()}else{boot()}",
@@ -11,6 +12,8 @@ function assertFeature(value, message) {
   if (!value) throw new Error(message);
 }
 function runFeatureChecks() {
+  assertFeature(rosterArchive.includes('## 1996–97 赛季') && rosterArchive.includes('#### ✅ 阿贾克斯（aja）') && rosterArchive.includes('| Edwin van der Sar |'), 'season-league-club roster archive');
+  assertFeature(rosterArchive.includes('— 暂无真实数据'), 'roster archive marks missing data');
   let historicalTeams = 0, historicalPlayers = 0;
   for (let year = 1993; year <= 2007; year++) {
     const clubs = ROSTERS[year] || {};
@@ -37,6 +40,8 @@ function runFeatureChecks() {
   assertFeature(anchor(2003, 'ars', 'Patrick Vieira')[5] === 'DM', 'Vieira detailed position');
   assertFeature(cnOf('Ray Parlour') === '雷·帕洛尔' && cnOf('Gary Neville') === '加里·内维尔', 'manual name translations');
   assertFeature(cnOf('Unmapped Testname') === 'Unmapped Testname', 'safe untranslated-name fallback');
+  assertFeature(ROSTERS[1996].aja.length >= 20 && ['Edwin van der Sar','Jari Litmanen','Patrick Kluivert'].every(n => ROSTERS[1996].aja.some(p => p[0] === n)), '1996 Ajax real roster');
+  assertFeature(!ROSTERS[1996].aja.some(p => p[0].includes('伊万诺夫')), '1996 Ajax excludes generated Ivanov');
 
   g = { uid: 1, year: 2011 };
   const salah = mkPlayer({name:'Mohamed Salah',nat:'EGY',pos:'FW',age:20,abi:78,pot:80});
@@ -68,6 +73,31 @@ function runFeatureChecks() {
 
   newGame('top');
   g.deal = false;
+  const capped = genPlayer('FW', 92, g.year, {club:C[g.clubId],age:18,abi:92});
+  assertFeature(capped.abi <= 74 && capped.pot >= 90 && capped.generated, 'generated 18-year-old ability cap');
+  const realStart = newGame('rand', 'real');
+  assertFeature(realStart.worldStyle === 'real' && ROSTERS[realStart.year] && ROSTERS[realStart.year][realStart.clubId], 'real-history start always has roster data');
+  assertFeature(Object.values(realStart.lgMembers).flat().every(cid => realStart.cs[cid] && realStart.cs[cid].sq.length), 'real-history start keeps complete simulated world');
+  g.deal = false;
+  const southAmerican = {name:'Appeal Test',nat:'ARG',dreamClub:null};
+  assertFeature(clubAppeal('rma',southAmerican,'aja') >= CLUB_APPEAL.rma + 18, 'Real Madrid South American appeal bonus');
+  const german = {name:'Bundesliga Test',nat:'GER',dreamClub:null};
+  assertFeature(clubAppeal('bay',german,'dor') >= CLUB_APPEAL.bay + 18, 'Bayern Bundesliga appeal bonus');
+  const loyal = mkPlayer({name:'Francesco Totti',nat:'ITA',pos:'FW',age:24,abi:90,pot:94});
+  assertFeature(loyal.loyalty >= 92 && loyal.dreamClub === 'rom', 'loyal-player anchor');
+  loyal.loyalty=20;loyal.ambition=95;loyal.moneyDrive=90;loyal.blockedMoves=0;
+  applyBlockedMove(loyal,{appealGap:20});applyBlockedMove(loyal,{appealGap:20});
+  assertFeature(loyal.unsettled > 0 && loyal.noRenew, 'repeated blocked move causes unrest and no-renewal');
+  ui.startStyle=null;
+  assertFeature(startHtml().includes('真实历史') && startHtml().includes('梦幻世界'), 'two-stage world-style selection');
+  const topBar = renderTop();
+  assertFeature(topBar.indexOf('⚡实力') < topBar.indexOf('ⓘ 状态影响'), 'strength chip kept in visible leading group');
+  const lowCid=appealRanking(null).slice(-1)[0].cid;g.clubId=lowCid;relink();g.round=10;
+  const prospect=mkPlayer({name:'Opportunity Test',nat:'ARG',pos:'FW',age:20,abi:73,pot:94});
+  prospect.loyalty=25;prospect.ambition=95;prospect.dreamClub='rma';prospect.seasonApps=0;g.cs[lowCid].sq=[prospect];
+  const pressure=transferPressureCase();
+  assertFeature(pressure && pressure.p.id===prospect.id && pressure.missed, 'high-potential low-minutes transfer demand');
+  newGame('top');g.deal=false;
   coachReport();
   const transferReport = g.coachReport;
   assertFeature(coachNeeds(transferReport).length === 2 && new Set(coachNeeds(transferReport).map(n => n.pos)).size === 2, 'two independent coach needs');
